@@ -1,27 +1,24 @@
 use ark_bn254::Fr;
+use ark_ff::{Field, Zero};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result as R1CSResult};
 use ark_r1cs_std::{
     alloc::AllocVar,
+    boolean::Boolean,
     eq::EqGadget,
     fields::fp::FpVar,
     fields::FieldVar,
     ToBitsGadget,
 };
-use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-use ark_crypto_primitives::sponge::poseidon::constraints::PoseidonSpongeVar;
-use ark_crypto_primitives::sponge::constraints::CryptographicSpongeVar;
 
 /// Small fixed dimensions for POC.
 pub const N: usize = 3;     // vector/matrix width
 pub const L: usize = 2;     // number of layers in the forward
 
-/// Public quantization config (simple per-tensor scale = NUM/DEN, signed INT8 range).
+/// Public quantization config (simple per-tensor scale = NUM/DEN).
 #[derive(Clone, Copy)]
 pub struct Quant {
     pub scale_num: Fr, // integer encoded in field
-    pub scale_den: Fr, // integer encoded in field (>0)
-    pub qmin: Fr,      // e.g., -128
-    pub qmax: Fr,      // e.g.,  127
+    pub scale_den: Fr, // integer encoded in field (>0), fixed to 2 for POC
 }
 
 #[derive(Clone)]
@@ -35,42 +32,41 @@ pub struct LinChainCircuit {
     pub h_w: Fr,
     /// Public quantization config
     pub q: Quant,
-    /// Intermediate layer outputs (private witnesses)
-    pub layer_outputs: [[Fr; N]; L],
     /// Division quotients and remainders for each layer (private witnesses)
     pub div_quotients: [[Fr; N]; L],
     pub div_remainders: [[Fr; N]; L],
 }
 
 impl LinChainCircuit {
-    /// Poseidon commitment over weights.
-    /// Absorbs all w_vars[l][i][j] into Poseidon sponge and squeezes one field element.
+    /// Deterministic α-sum commitment over weights.
+    /// h = Σ w_i * α^i with fixed α=5.
+    ///
+    /// ⚠️  NON-CRYPTOGRAPHIC: This is a linear map, collisions exist.
+    /// For production, replace with Poseidon hash using vetted BN254 parameters.
     fn commit_weights(cs: ConstraintSystemRef<Fr>, w_vars: &Vec<Vec<Vec<FpVar<Fr>>>>) -> R1CSResult<FpVar<Fr>> {
-        // Create Poseidon parameters manually for BN254 scalar field
-        // Using typical parameters: full_rounds=8, partial_rounds=31, alpha=5, sbox=0, capacity=1
-        let ark = vec![vec![Fr::from(0u64); 3]; 39]; // 8 + 31 rounds, rate + capacity
-        let mds = vec![vec![Fr::from(1u64); 3]; 3]; // Simple MDS matrix for rate=2, capacity=1
-        let poseidon_config = PoseidonConfig::<Fr>::new(8, 31, 5, mds, ark, 2, 1);
-        let mut sponge = PoseidonSpongeVar::<Fr>::new(cs.clone(), &poseidon_config);
+        let alpha = Fr::from(5u64); // Fixed base for deterministic commitment
+        let mut alpha_pow = FpVar::<Fr>::new_constant(cs.clone(), Fr::from(1u64))?;
+        let alpha_c = FpVar::<Fr>::new_constant(cs.clone(), alpha)?;
+        let mut acc = FpVar::<Fr>::zero();
 
-        // Absorb all weights in order: w[l][i][j]
         for l in 0..L {
             for i in 0..N {
                 for j in 0..N {
-                    sponge.absorb(&w_vars[l][i][j])?;
+                    acc += &w_vars[l][i][j] * &alpha_pow;
+                    alpha_pow = &alpha_pow * &alpha_c;
                 }
             }
         }
-
-        // Squeeze one field element as the commitment
-        let commitment = sponge.squeeze_field_elements(1)?;
-        Ok(commitment[0].clone())
+        Ok(acc)
     }
 
-    /// Range-check an FpVar as signed INT8 or INT16 by constraining its bit length.
+    /// Range-check an FpVar to fit in `bits` by constraining high bits to zero.
     fn range_check_bits(v: &FpVar<Fr>, bits: usize) -> R1CSResult<()> {
-        // Just constrain to <= bits using bit decomposition (two's complement ignored; we keep values small in tests).
-        let _ = v.to_bits_le()?[0..bits].to_vec(); // force allocation; full check via bounds in the arithmetic below
+        let bits_le = v.to_bits_le()?;
+        // Force all bits above our limit to be zero
+        for b in bits..bits_le.len() {
+            Boolean::enforce_equal(&bits_le[b], &Boolean::constant(false))?;
+        }
         Ok(())
     }
 }
@@ -87,8 +83,15 @@ impl ConstraintSynthesizer<Fr> for LinChainCircuit {
         let h_w_pub = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.h_w))?;
         let scale_num = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.q.scale_num))?;
         let scale_den = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.q.scale_den))?;
-        let qmin = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.q.qmin))?;
-        let qmax = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.q.qmax))?;
+
+        // Range-bound public inputs to prevent warping
+        for xi in &x_vars { Self::range_check_bits(xi, 16)?; }
+        for yi in &y_pub  { Self::range_check_bits(yi, 16)?; }
+
+        // POC: fix den == 2 and enforce it's nonzero
+        scale_den.enforce_equal(&FpVar::constant(Fr::from(2u64)))?;
+        let inv2 = FpVar::constant(Fr::from(2u64).inverse().unwrap());
+        (&scale_den * &inv2).enforce_equal(&FpVar::constant(Fr::from(1u64)))?;
 
         // Private weights
         let mut w_vars: Vec<Vec<Vec<FpVar<Fr>>>> = Vec::with_capacity(L);
@@ -128,17 +131,17 @@ impl ConstraintSynthesizer<Fr> for LinChainCircuit {
                 let numed = &t[i] * &scale_num;             // t * num
                 // Use the pre-computed witness values
                 let y_i = FpVar::<Fr>::new_witness(cs.clone(), || Ok(self.div_quotients[l][i]))?;
-                let r_i = FpVar::<Fr>::new_witness(cs.clone(), || Ok(self.div_remainders[l][i]))?;
+
+                // Use Boolean directly for remainder (den=2 → r ∈ {0,1})
+                let r_bit = Boolean::new_witness(cs.clone(), || {
+                    let rem_val = self.div_remainders[l][i];
+                    Ok(!rem_val.is_zero())
+                })?;
+                let r_i = FpVar::<Fr>::from(r_bit.clone());
                 (&scale_den * &y_i + &r_i).enforce_equal(&numed)?;
-                // Range constraints: r_i in [0, den-1], y_i in [qmin, qmax] (soft via bits/range)
-                // TODO: For POC, skip range constraints as they're failing with current test parameters
-                // Self::range_check_bits(&r_i, 16)?; // small remainder
-                // Self::range_check_bits(&y_i, 16)?; // treat as INT16 for headroom
-                // Skip clipping constraints for now - values exceed [qmin, qmax] range in current test
-                // let a = FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(0u64)))?;
-                // let b = FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(0u64)))?;
-                // (&y_i - &qmin).enforce_equal(&a)?;
-                // (&qmax - &y_i).enforce_equal(&b)?;
+
+                // Range check y_i to be reasonable (skip signed range for POC)
+                Self::range_check_bits(&y_i, 16)?; // INT16 range for headroom
                 // Carry
                 next_x.push(y_i);
             }

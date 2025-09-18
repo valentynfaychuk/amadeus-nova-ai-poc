@@ -13,15 +13,22 @@ Proves knowledge of private 2-layer neural network weights that produce given ou
 ## Usage
 
 ```bash
-# Generate test data
+# INFERENCE
+# In prod will be running on an H100 beast with the weights loaded into HBM
+# The weights hash is added to this model's instance on-chain, presumably
+# 120B @ INT16 OSS GPT (240GB of weights)
 python3 scripts/infer.py > data/instance.json
 
-# Build and run
+# COMPUTOR (MINER)
+# The most heavy-weight lifting, mostly because can't be done directly inside H100 -
+# creates cryptographic proof with public inputs and outputs of the inference and
+# seeded by the blockchain recent block and the model weights
 cargo build --release
 ./target/release/prover data/instance.json out/
-./target/release/verifier out/vk.bin out/proof.bin out/public_inputs.json
 
-# Batch verification
+# VERIFIER (VALIDATOR)
+# Verification is the fastest step, can do single and batch verification
+./target/release/verifier out/vk.bin out/proof.bin out/public_inputs.json
 echo '[{"vk":"out/vk.bin","proof":"out/proof.bin","pubs":"out/public_inputs.json"}]' > batch.json
 ./target/release/aggregator batch.json
 ```

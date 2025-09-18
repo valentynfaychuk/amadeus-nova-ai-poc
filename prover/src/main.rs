@@ -3,10 +3,6 @@ use ark_ff::PrimeField;
 use ark_groth16::Groth16;
 use ark_snark::SNARK;
 use ark_serialize::CanonicalSerialize;
-use ark_crypto_primitives::sponge::{
-    poseidon::{PoseidonConfig, PoseidonSponge},
-    CryptographicSponge,
-};
 use rand::rngs::OsRng;
 use serde::Deserialize;
 use std::fs::File;
@@ -23,12 +19,9 @@ struct InputJson {
     // quantization config
     scale_num: u64,
     scale_den: u64,
-    qmin: i64,
-    qmax: i64,
 }
 
 fn to_fr(x: u64) -> Fr { Fr::from(x) }
-fn to_fr_i(x: i64) -> Fr { if x>=0 { Fr::from(x as u64) } else { -Fr::from((-x) as u64) } }
 
 fn field_to_u64(f: Fr) -> u64 {
     // Convert field element to u64 by extracting the underlying integer
@@ -59,31 +52,23 @@ fn main() -> anyhow::Result<()> {
     let q = Quant {
         scale_num: to_fr(input.scale_num),
         scale_den: to_fr(input.scale_den),
-        qmin: to_fr_i(input.qmin),
-        qmax: to_fr_i(input.qmax),
     };
 
-    // Poseidon commitment to weights (matches circuit)
-    // Using the same parameters as in the circuit
-    let ark = vec![vec![Fr::from(0u64); 3]; 39]; // 8 + 31 rounds, rate + capacity
-    let mds = vec![vec![Fr::from(1u64); 3]; 3]; // Simple MDS matrix for rate=2, capacity=1
-    let poseidon_config = PoseidonConfig::<Fr>::new(8, 31, 5, mds, ark, 2, 1);
-    let mut sponge = PoseidonSponge::<Fr>::new(&poseidon_config);
-
-    // Absorb all weights in the same order as the circuit: w[l][i][j]
+    // Deterministic α-sum commitment to weights (matches circuit)
+    // ⚠️  NON-CRYPTOGRAPHIC: Linear map, collisions exist. Use Poseidon for production.
+    let alpha = Fr::from(5u64);
+    let mut alpha_pow = Fr::from(1u64);
+    let mut h_w = Fr::from(0u64);
     for l in 0..L {
         for i in 0..N {
             for j in 0..N {
-                sponge.absorb(&w_fr[l][i][j]);
+                h_w += w_fr[l][i][j] * alpha_pow;
+                alpha_pow *= alpha;
             }
         }
     }
 
-    // Squeeze one field element as the commitment
-    let h_w = sponge.squeeze_field_elements(1)[0];
-
     // Compute the forward pass with witnesses to get intermediate values
-    let mut layer_outputs = [[Fr::from(0u64); N]; L];
     let mut div_quotients = [[Fr::from(0u64); N]; L];
     let mut div_remainders = [[Fr::from(0u64); N]; L];
 
@@ -100,6 +85,7 @@ fn main() -> anyhow::Result<()> {
         }
 
         // Quantization: y = floor((t * scale_num) / scale_den)
+        let mut next_input = [Fr::from(0u64); N];
         for i in 0..N {
             // Convert to integers for proper floor division
             let t_int = field_to_u64(t[i]);
@@ -112,11 +98,11 @@ fn main() -> anyhow::Result<()> {
 
             div_quotients[l][i] = Fr::from(quot_int);
             div_remainders[l][i] = Fr::from(rem_int);
-            layer_outputs[l][i] = Fr::from(quot_int); // The output of this layer
+            next_input[i] = Fr::from(quot_int); // The output of this layer
         }
 
         // Update input for next layer
-        current_input = layer_outputs[l];
+        current_input = next_input;
     }
 
     let circuit_with_witness = LinChainCircuit {
@@ -125,7 +111,6 @@ fn main() -> anyhow::Result<()> {
         y_out: y_fr,
         h_w,
         q,
-        layer_outputs,
         div_quotients,
         div_remainders,
     };
@@ -137,8 +122,7 @@ fn main() -> anyhow::Result<()> {
         x0: [z; N],
         y_out: [z; N],
         h_w: z,
-        q: Quant { scale_num: z, scale_den: Fr::from(1u64), qmin: z, qmax: z },
-        layer_outputs: [[z; N]; L],
+        q: Quant { scale_num: z, scale_den: Fr::from(2u64) }, // Use den=2 for blank circuit too
         div_quotients: [[z; N]; L],
         div_remainders: [[z; N]; L],
     };
@@ -154,15 +138,13 @@ fn main() -> anyhow::Result<()> {
     let mut f_pf = BufWriter::new(File::create(format!("{}/proof.bin", out_dir))?);
     proof.serialize_uncompressed(&mut f_pf)?;
 
-    // Public inputs (order must match verifier & circuit): x0 || y_out || h_w || q
+    // Public inputs (order must match verifier & circuit): x0 || y_out || h_w || scale_num || scale_den
     let mut pubs: Vec<Fr> = Vec::new();
     pubs.extend(x_fr.iter());
     pubs.extend(y_fr.iter());
     pubs.push(h_w);
     pubs.push(q.scale_num);
     pubs.push(q.scale_den);
-    pubs.push(q.qmin);
-    pubs.push(q.qmax);
     let pubs_u64: Vec<String> = pubs.iter().map(|v| v.into_bigint().to_string()).collect();
     std::fs::write(format!("{}/public_inputs.json", out_dir), serde_json::to_string_pretty(&pubs_u64)?)?;
 
