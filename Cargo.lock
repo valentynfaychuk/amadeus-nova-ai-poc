@@ -3,6 +3,21 @@
 version = 4
 
 [[package]]
+name = "aggregator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ark-bn254",
+ "ark-ff",
+ "ark-groth16",
+ "ark-serialize",
+ "ark-snark",
+ "num-bigint",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -39,6 +54,7 @@ checksum = "1f3a13b34da09176a8baba701233fdffbaa7c1b1192ce031a3da4e55ce1f1a56"
 dependencies = [
  "ark-ec",
  "ark-ff",
+ "ark-r1cs-std",
  "ark-relations",
  "ark-serialize",
  "ark-snark",
@@ -48,6 +64,7 @@ dependencies = [
  "digest",
  "rayon",
  "sha2",
+ "tracing",
 ]
 
 [[package]]
@@ -252,6 +269,7 @@ name = "circuit"
 version = "0.1.0"
 dependencies = [
  "ark-bn254",
+ "ark-crypto-primitives",
  "ark-ff",
  "ark-r1cs-std",
  "ark-relations",
@@ -458,6 +476,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ark-bn254",
+ "ark-crypto-primitives",
  "ark-ff",
  "ark-groth16",
  "ark-serialize",
@@ -699,6 +718,7 @@ dependencies = [
  "ark-groth16",
  "ark-serialize",
  "ark-snark",
+ "num-bigint",
  "serde_json",
 ]
 
