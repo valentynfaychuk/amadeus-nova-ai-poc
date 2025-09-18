@@ -1,0 +1,3 @@
+[workspace]
+members = ["circuit", "prover", "verifier"]
+resolver = "2"
