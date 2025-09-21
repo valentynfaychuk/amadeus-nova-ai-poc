@@ -4,14 +4,14 @@ use ark_relations::r1cs::ConstraintSystem;
 #[test]
 fn test_circuit_constraint_debug() {
     // Create a simple test with properly computed commitments
-    let _w2 = [[Fr::from(1u64); 16]; 16]; // Identity matrix
-    let _y1 = [Fr::from(2u64); 16]; // Input vector [2, 2, ...]
+    let w2 = [[Fr::from(1u64); 16]; 16]; // Identity matrix
+    let y1 = [Fr::from(2u64); 16]; // Input vector [2, 2, ...]
     let _scale_num = Fr::from(3u64);
 
     // Expected computation: y2[i] = floor((W2·y1)[i] * scale_num / 2)
     // With identity: (W2·y1)[i] = y1[i] = 2
     // So: y2[i] = floor(2 * 3 / 2) = floor(3) = 3
-    let _y2 = [Fr::from(3u64); 16];
+    let y2 = [Fr::from(3u64); 16];
 
     // Division witnesses: 2 * 3 = 2 * 3 + 0, so quotient=3, remainder=0
     let _div_quotients = [Fr::from(3u64); 16];
@@ -52,12 +52,15 @@ fn test_circuit_constraint_debug() {
     let y1_small = [Fr::from(1u64); 16]; // Smaller input vector [1, 1, ...]
     let scale_num_small = Fr::from(1u64); // Use scale_num = 1 to simplify
 
-    // With identity and y1=[1], scale_num=1: y2[i] = floor(1 * 1 / 2) = floor(0.5) = 0
-    let y2_small = [Fr::from(0u64); 16];
+    // With identity and y1=[1], scale_num=1:
+    // t_i = W2·y1 = sum of 16 ones = 16
+    // numed = t_i * scale_num = 16 * 1 = 16
+    // y2[i] = floor(numed / 2) = floor(16 / 2) = 8
+    let y2_small = [Fr::from(8u64); 16];
 
-    // Division witnesses: 1 * 1 = 2 * 0 + 1, so quotient=0, remainder=1
-    let div_quotients_small = [Fr::from(0u64); 16];
-    let div_remainders_small = [Fr::from(1u64); 16];
+    // Division witnesses: 16 = 2 * 8 + 0, so quotient=8, remainder=0
+    let div_quotients_small = [Fr::from(8u64); 16];
+    let div_remainders_small = [Fr::from(0u64); 16];
 
     // Recompute commitments for smaller values
     let mut h_w2_small = Fr::from(0u64);
@@ -100,6 +103,19 @@ fn test_circuit_constraint_debug() {
     println!("h_w2_small: {}", h_w2_small);
     println!("h_y1_small: {}", h_y1_small);
     println!("h_y_small: {}", h_y_small);
+
+    // Debug the computation step by step
+    println!("🔍 Debug computation:");
+    println!("W2 (identity): {:?}", w2_small[0]); // First row
+    println!("y1 (all 1s): {:?}", &y1_small[0..4]); // First few elements
+    println!("scale_num: {}", scale_num_small);
+
+    // Manual computation: t_i = W2·y1 = 1*1 + 1*1 + ... = 16 (sum of 16 ones)
+    // numed = t_i * scale_num = 16 * 1 = 16
+    // floor(numed / 2) = floor(16/2) = 8
+    // So quotient should be 8, remainder should be 0
+    println!("Expected: t_i = 16, numed = 16, quotient = 8, remainder = 0");
+    println!("But we used: quotient = 0, remainder = 1");
 
     // Test constraint generation
     let cs = ConstraintSystem::<Fr>::new_ref();

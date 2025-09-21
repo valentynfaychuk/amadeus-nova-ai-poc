@@ -70,7 +70,14 @@ pub fn compute_layer_16x16(w2: &[[i64; 16]; 16], y1: &[i64; 16], scale_num: u64)
             acc += w2[i][j] * y1[j];
         }
         // Quantized floor: y = floor((acc * scale_num) / 2)
-        y2[i] = (acc * (scale_num as i64)) / 2;
+        // Use proper floor division for negative numbers
+        let numerator = acc * (scale_num as i64);
+        y2[i] = if numerator >= 0 {
+            numerator / 2
+        } else {
+            // For negative numbers: floor(a/b) = (a - (b-1)) / b
+            (numerator - 1) / 2
+        };
     }
 
     y2
@@ -142,5 +149,32 @@ mod tests {
             let expected = 3 * (i as i64 + 1);
             assert_eq!(y2[i], expected);
         }
+    }
+
+    #[test]
+    fn test_floor_division_negative() {
+        // Test negative floor division specifically
+        let w2 = [[-1i64; 16]; 16]; // All -1s
+        let y1 = [1i64; 16]; // All 1s
+        let scale_num = 3;
+
+        let y2 = compute_layer_16x16(&w2, &y1, scale_num);
+
+        // acc = -1 * 1 * 16 = -16
+        // numerator = -16 * 3 = -48
+        // floor(-48 / 2) = floor(-24) = -24
+        let expected = -24i64;
+        assert_eq!(y2[0], expected);
+
+        // Test borderline case: numerator = -3
+        // floor(-3 / 2) = floor(-1.5) = -2
+        let w2_border = [[0i64; 16]; 16];
+        let mut w2_test = w2_border;
+        w2_test[0][0] = -1;
+        let y1_test = [3i64; 16];
+        let y2_border = compute_layer_16x16(&w2_test, &y1_test, 1);
+        // acc = -1 * 3 = -3, numerator = -3 * 1 = -3
+        // floor(-3 / 2) = -2
+        assert_eq!(y2_border[0], -2);
     }
 }
