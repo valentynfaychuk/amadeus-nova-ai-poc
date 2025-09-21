@@ -1,9 +1,13 @@
 use crate::cli::VerifyArgs;
 use crate::formats::*;
 use circuit::compressed;
-use engine::freivalds::freivalds_check;
-use ark_bn254::Bn254;
+use engine::freivalds::{freivalds_check_bound, vk_hash, derive_seed, solve_linear_16, matrix_rank};
+use engine::gemv::recompute_h_w1;
+use engine::commitment::commit_alpha_sum_vec;
+use engine::field_to_i64;
+use ark_bn254::{Bn254, Fr};
 use ark_groth16::Groth16;
+use ark_ff::Zero;
 use std::fs::File;
 use std::io::BufReader;
 use anyhow::Result;
@@ -31,32 +35,135 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
             .join("out/public_inputs.json")
     });
 
-    // Step 1: Verify Freivalds check (if not skipped)
-    if !args.skip_freivalds && run_data.freivalds_result.is_some() {
-        println!("🔍 Re-running Freivalds verification...");
+    // Step 1: Load verification key for transcript binding
+    println!("🔑 Loading verification key from {}...", vk_path.display());
+    let vk_file = File::open(&vk_path)?;
+    let mut vk_reader = BufReader::new(vk_file);
+    let vk = compressed::deserialize_vk_compressed(&mut vk_reader)
+        .map_err(|e| anyhow::anyhow!("Failed to deserialize verification key: {}", e))?;
+
+    // Step 2: Verify Freivalds check with transcript binding (if not skipped)
+    if !args.skip_freivalds {
+        println!("🔍 Re-running Freivalds verification with enhanced security...");
 
         let weights1_path = args.weights1_path.clone().ok_or_else(|| {
             anyhow::anyhow!("--weights1-path required for Freivalds verification")
         })?;
 
-        let mut w1_reader = load_weights1(&weights1_path, run_data.config.k)?;
         let y1: [i64; 16] = run_data.y1.as_slice().try_into()
             .map_err(|_| anyhow::anyhow!("y1 must have exactly 16 elements"))?;
 
+        // Step 2a: Recompute h_W1 during verify
+        println!("🔍 Recomputing h_W1 commitment...");
+        let w1_file = File::open(&weights1_path)?;
+        let w1_reader = BufReader::new(w1_file);
+        let tile_k = args.tile_k.unwrap_or(run_data.config.tile_k);
+        let alpha = Fr::from(5u64); // Same alpha as in commitment
+        let h_w1_recomputed = recompute_h_w1(w1_reader, run_data.config.k, tile_k, alpha)?;
+
+        // Convert stored h_w1 to field element for comparison
+        let h_w1_stored = string_to_field(&run_data.commitments.h_w1)?;
+        if h_w1_recomputed != h_w1_stored {
+            anyhow::bail!("h_W1 mismatch: recomputed != stored. Weights file may be corrupted or modified.");
+        }
+        println!("   ✓ h_W1 commitment verified");
+
+        // Step 2b: Derive transcript-bound seed
+        let vk_hash_bytes = vk_hash(&vk);
+        let vk_hash_hex = hex::encode(vk_hash_bytes);
+        println!("   VK hash: {}", vk_hash_hex);
+
+        let transcript_seed = if args.no_bind_randomness {
+            println!("   ⚠️ Using prover's seed (--no-bind-randomness)");
+            let mut seed_bytes = [0u8; 32];
+            seed_bytes[..8].copy_from_slice(&run_data.config.seed.to_le_bytes());
+            seed_bytes
+        } else {
+            derive_seed(
+                &vk_hash_bytes,
+                run_data.config.model_id.as_deref(),
+                &run_data.commitments.h_w1,
+                &run_data.commitments.h_w2,
+                &run_data.commitments.h_x,
+                &run_data.commitments.h_y1,
+                &run_data.commitments.h_y,
+                args.block_entropy.as_deref(),
+            )
+        };
+
+        // Step 2c: Run Freivalds with transcript-bound randomness
+        let mut w1_reader = load_weights1(&weights1_path, run_data.config.k)?;
         let start_time = std::time::Instant::now();
 
-        match freivalds_check(
+        match freivalds_check_bound(
             &mut w1_reader,
             &run_data.x0,
             &y1,
             run_data.config.k,
             run_data.config.tile_k,
             run_data.config.freivalds_rounds,
-            run_data.config.seed,
+            transcript_seed,
         ) {
-            Ok(()) => {
+            Ok((r_matrix, s_vector)) => {
                 let freivalds_time = start_time.elapsed();
                 println!("✅ Freivalds verification passed in {:.3}s", freivalds_time.as_secs_f64());
+
+                // Step 2d: Reconstruct y1 from Freivalds when k >= 16
+                if run_data.config.k >= 16 {
+                    println!("🔍 Reconstructing y1 from Freivalds matrix...");
+
+                    if r_matrix.len() < 16 {
+                        if args.allow_low_k {
+                            println!("   ⚠️ Insufficient rounds for y1 reconstruction (--allow-low-k)");
+                        } else {
+                            anyhow::bail!("Need at least 16 Freivalds rounds for y1 reconstruction, got {}", r_matrix.len());
+                        }
+                    } else {
+                        // Take first 16 rounds to form R matrix (16x16)
+                        let mut r_t = [[Fr::zero(); 16]; 16];
+                        for i in 0..16 {
+                            r_t[i] = r_matrix[i];
+                        }
+
+                        // Check rank of R
+                        let rank = matrix_rank(&r_t);
+                        if rank < 16 {
+                            if args.allow_low_k {
+                                println!("   ⚠️ Matrix R has rank {} < 16, skipping reconstruction (--allow-low-k)", rank);
+                            } else {
+                                anyhow::bail!("Matrix R has insufficient rank {} < 16 for unique solution", rank);
+                            }
+                        } else {
+                            // Solve R^T * y1 = s for first 16 rounds
+                            let s_subset: [Fr; 16] = s_vector[..16].try_into().unwrap();
+
+                            match solve_linear_16(r_t, s_subset) {
+                                Some(y1_reconstructed) => {
+                                    // Commit the recovered y1 using β-sum
+                                    let y1_i64: Vec<i64> = y1_reconstructed.iter()
+                                        .map(|&fr| field_to_i64(fr))
+                                        .collect();
+
+                                    let h_y1_reconstructed = commit_alpha_sum_vec(&y1_i64);
+                                    let h_y1_stored = string_to_field(&run_data.commitments.h_y1)?;
+
+                                    if h_y1_reconstructed == h_y1_stored {
+                                        println!("   ✅ y1 reconstruction successful and verified");
+                                    } else {
+                                        anyhow::bail!("y1 reconstruction failed: h_y1 mismatch");
+                                    }
+                                }
+                                None => {
+                                    anyhow::bail!("Failed to solve linear system for y1 reconstruction");
+                                }
+                            }
+                        }
+                    }
+                } else if !args.allow_low_k {
+                    anyhow::bail!("k={} < 16, cannot perform y1 reconstruction. Use --allow-low-k to skip.", run_data.config.k);
+                } else {
+                    println!("   ⚠️ k={} < 16, skipping y1 reconstruction (--allow-low-k)", run_data.config.k);
+                }
 
                 // Check consistency with recorded result
                 if let Some(ref recorded) = run_data.freivalds_result {
@@ -95,12 +202,7 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
         println!("⏭️  Skipping Freivalds verification");
     }
 
-    // Step 2: Load verification key
-    println!("🔑 Loading verification key from {}...", vk_path.display());
-    let vk_file = File::open(&vk_path)?;
-    let mut vk_reader = BufReader::new(vk_file);
-    let vk = compressed::deserialize_vk_compressed(&mut vk_reader)
-        .map_err(|e| anyhow::anyhow!("Failed to deserialize verification key: {}", e))?;
+    // Verification key already loaded above for transcript binding
 
     // Step 3: Load proof
     println!("📜 Loading proof from {}...", proof_path.display());
@@ -259,6 +361,10 @@ mod tests {
             public_inputs_path: Some(proof_dir.join("public_inputs.json")),
             weights1_path: None, // Skip Freivalds in test
             skip_freivalds: true,
+            no_bind_randomness: false,
+            allow_low_k: false,
+            block_entropy: None,
+            tile_k: None,
         };
 
         // Should verify successfully
@@ -277,6 +383,8 @@ mod tests {
                 seed: 42,
                 freivalds_rounds: 32,
                 skip_freivalds: false,
+                model_id: None,
+                vk_hash: None,
             },
             x0: vec![1; 256],
             y1: vec![2; 16],

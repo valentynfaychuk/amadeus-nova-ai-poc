@@ -117,6 +117,10 @@ pub fn run_demo(seed: u64) -> Result<()> {
         public_inputs_path: Some(temp_path.join("proof_out/public_inputs.json")),
         weights1_path: Some(w1_path),
         skip_freivalds: false,
+        no_bind_randomness: false,
+        allow_low_k: true, // Demo might use small k
+        block_entropy: None,
+        tile_k: None,
     };
 
     verify::run_verify(verify_args)?;

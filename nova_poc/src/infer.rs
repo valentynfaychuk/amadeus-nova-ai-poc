@@ -148,6 +148,8 @@ fn run_inference_pipeline(
             seed: args.seed,
             freivalds_rounds: args.freivalds_rounds,
             skip_freivalds: args.skip_freivalds,
+            model_id: None, // Will be set during proving if needed
+            vk_hash: None,  // Will be set during proving
         },
         x0,
         y1: y1.to_vec(),

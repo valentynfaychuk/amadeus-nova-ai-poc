@@ -73,8 +73,12 @@ echo ""
 echo "Next steps:"
 echo "  1. Setup keys (one-time): ./target/release/nova_poc setup --out-dir keys"
 echo "  2. Generate proof: ./target/release/nova_poc prove data/run_k{k}.json --pk-path keys/pk.bin --out-dir data/out"
-echo "  3. Verify proof:  ./target/release/nova_poc verify data/run_k{k}.json --weights1-path {w1_path}"
-echo "  Or verify without Freivalds: ./target/release/nova_poc verify data/run_k{k}.json --skip-freivalds"
+echo "  3. Verify proof (v2.0 enhanced): ./target/release/nova_poc verify data/run_k{k}.json --weights1-path {w1_path}"
+echo "     Optional security flags:"
+echo "       --block-entropy <hex>     # Extra entropy for high-security environments"
+echo "       --no-bind-randomness      # Disable transcript binding (⚠️ testing only)"
+echo "       --allow-low-k             # Allow k < 16 without y1 reconstruction"
+echo "       --skip-freivalds          # Skip Freivalds (⚠️ reduced security)"
 """)
     os.chmod(script_path, 0o755)
     print(f"   ✓ Created run script: {script_path}")

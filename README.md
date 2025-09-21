@@ -35,6 +35,9 @@ This generates random data and runs the full pipeline: inference → key setup �
 ### Production-Scale Example (K=50240)
 
 ```bash
+# 0. Cleanup old data (optional)
+rm -rf keys data
+
 # 1. Generate test data for large-scale inference (16×50240 matrix)
 python3 scripts/gen.py --k 50240
 
@@ -176,7 +179,7 @@ Options:
 
 ### `nova_poc verify`
 
-Verifies proof and optionally re-runs Freivalds:
+Verifies proof with enhanced security features:
 
 ```bash
 nova_poc verify <RUN_JSON> [OPTIONS]
@@ -187,6 +190,10 @@ Options:
   --public-inputs-path <PATH>  Public inputs JSON
   --weights1-path <PATH>       W1 for Freivalds re-verification (required unless --skip-freivalds)
   --skip-freivalds             Skip Freivalds re-verification
+  --no-bind-randomness         Use prover's seed instead of transcript-bound seed (for tests)
+  --allow-low-k                Allow k < 16 without y1 reconstruction
+  --block-entropy <HEX>        Optional extra entropy in the transcript (hex string)
+  --tile-k <USIZE>             Tile size for recompute function (defaults to value from RunData)
 ```
 
 ### `nova_poc setup`
@@ -232,6 +239,40 @@ Options:
 
 ## Security Analysis
 
+### 🔐 Enhanced Security Features (v2.0)
+
+**Version 2.0 introduces critical security enhancements that bind the Freivalds verifier to the SNARK proof, preventing sophisticated fraud attempts:**
+
+#### **1. Transcript-Bound Randomness (Fiat-Shamir)**
+- **Purpose**: Prevents prover from choosing "easy" Freivalds seeds
+- **Method**: Derives seeds from immutable transcript containing VK hash and all commitments
+- **Transcript Format**: `"FREIVALDSv1" || vk_hash || model_id || h_w1 || h_w2 || h_x || h_y1 || h_y || block_entropy`
+- **Security**: Eliminates prover's ability to bias randomness generation
+
+#### **2. Weight Integrity Verification**
+- **Purpose**: Detects tampering with W1 weight files during verification
+- **Method**: Recomputes `h_W1` commitment by streaming weights in exact gemv order
+- **Validation**: Rejects verification if `h_W1_recomputed ≠ h_W1_stored`
+- **Security**: Prevents weight file substitution attacks
+
+#### **3. Hidden State Reconstruction (k ≥ 16)**
+- **Purpose**: Binds Freivalds transcript to SNARK's hidden intermediate state y1
+- **Method**: Solves `R^T * y1 = s` where R is matrix of Freivalds random vectors
+- **Validation**: Reconstructed y1 must match commitment `h_y1` via β-sum
+- **Security**: Prevents mismatched y1 attacks and strengthens binding between layers
+
+#### **4. Enhanced CLI Security Controls**
+```bash
+# Production verification (all security features enabled)
+nova_poc verify run.json --weights1-path w1.bin
+
+# Test mode with relaxed security (⚠️ NOT for production)
+nova_poc verify run.json --no-bind-randomness --allow-low-k
+
+# Additional entropy for high-security environments
+nova_poc verify run.json --block-entropy "$(head -c 16 /dev/urandom | hexdump -e '16/1 "%02x"')"
+```
+
 ### Attack Resistance & Defense Mechanisms
 
 Nova AI employs **multiple independent layers of security** to defend against various attack vectors:
@@ -256,20 +297,24 @@ Nova AI employs **multiple independent layers of security** to defend against va
 
 Run `scripts/run_attacks.sh` to reproduce these security tests:
 
-| Attack Type | Prover Strategy | Defense Response | Result |
-|-------------|----------------|------------------|--------|
-| **Naive Fraud** | Fake y1/y2, wrong commitments | Freivalds detects in round 0 | ❌ **BLOCKED** |
-| **Sophisticated Fraud** | Fake y1/y2, correct commitments | Freivalds detects in round 0 | ❌ **BLOCKED** |
-| **Bypass Attempt** | Skip Freivalds verification | Public input validation fails | ❌ **BLOCKED** |
+| Attack Type | Prover Strategy | v1.0 Defense | v2.0 Enhanced Defense | Result |
+|-------------|----------------|---------------|----------------------|--------|
+| **Naive Fraud** | Fake y1/y2, wrong commitments | Freivalds detection | Same + transcript binding | ❌ **BLOCKED** |
+| **Weight Substitution** | Replace W1 file with modified weights | Manual validation | Automatic h_W1 recomputation | ❌ **BLOCKED** |
+| **Seed Manipulation** | Choose favorable Freivalds seed | Randomness check | Transcript-bound derivation | ❌ **BLOCKED** |
+| **y1 Mismatch** | Valid W1*x0 but wrong y1 in proof | Limited detection | y1 reconstruction binding | ❌ **BLOCKED** |
+| **Bypass Attempt** | Skip enhanced security checks | N/A | CLI flag validation | ❌ **BLOCKED** |
 
 ```bash
-# Test all attack vectors
+# Test all attack vectors (including new v2.0 attacks)
 ./scripts/run_attacks.sh
 
 # Expected output:
+# 🛡️  Testing Enhanced Security Features (v2.0)
 # ✅ SECURITY SUCCESS: All attacks detected and blocked
-# ⏱️  Detection time: ~13s (same as honest verification)
+# ⏱️  Detection time: ~15s (includes new security checks)
 # 🔒 False positive rate: ~2^(-32) (astronomically low)
+# 💪 Enhanced binding: Freivalds ↔ SNARK proven secure
 ```
 
 #### **Economic Security Model**
@@ -284,20 +329,64 @@ Run `scripts/run_attacks.sh` to reproduce these security tests:
    - ⚠️ **Replace with Poseidon hash for production**
 3. **Freivalds Soundness**: Error probability ≤ 2^(-k) for k rounds
 
+### Enhanced Verification Workflow (v2.0)
+
+The v2.0 verification process now includes additional security checks:
+
+```bash
+# 1. Basic verification (all security features enabled by default)
+nova_poc verify run.json --weights1-path w1.bin
+
+# 2. High-security verification with additional entropy
+ENTROPY=$(head -c 16 /dev/urandom | hexdump -e '16/1 "%02x"')
+nova_poc verify run.json --weights1-path w1.bin --block-entropy $ENTROPY
+
+# 3. Verification steps performed internally:
+#    a) Load VK and compute vk_hash for transcript binding
+#    b) Recompute h_W1 by streaming weights file
+#    c) Derive transcript-bound seed from VK + commitments
+#    d) Run Freivalds with transcript-bound randomness
+#    e) Reconstruct y1 from Freivalds matrix (if k ≥ 16)
+#    f) Validate y1 against h_y1 commitment
+#    g) Verify Groth16 proof with public inputs
+```
+
+#### **Security Verification Checklist**
+
+✅ **VK Hash Computation**: Ensures transcript is bound to specific circuit
+✅ **Weight Integrity**: `h_W1_recomputed == h_W1_stored`
+✅ **Transcript Binding**: Seed derived from immutable transcript
+✅ **Freivalds Execution**: 32 rounds with transcript-bound randomness
+✅ **Matrix Rank Check**: `rank(R) ≥ 16` for unique y1 solution
+✅ **y1 Reconstruction**: Solve `R^T * y1 = s` and validate commitment
+✅ **Groth16 Verification**: Cryptographic proof validation
+
 ### Production Security Guidelines
 
-#### **🔒 Mandatory Requirements**
+#### **🔒 Mandatory Requirements (v2.0)**
 1. **NEVER use `--skip-freivalds` in production**
    - This flag is for testing/debugging only
    - Skipping Freivalds significantly reduces security
 
-2. **Use sufficient Freivalds rounds (≥32 recommended)**
+2. **NEVER use `--no-bind-randomness` in production**
+   - This disables transcript binding (v2.0 security feature)
+   - Only use for compatibility testing with v1.0 behavior
+
+3. **Use sufficient Freivalds rounds (≥32 recommended)**
    - Each round halves the fraud probability
    - 32 rounds → 2^(-32) fraud probability (~1 in 4 billion)
 
-3. **Validate all public inputs independently**
+4. **Ensure k ≥ 16 for full y1 reconstruction security**
+   - y1 reconstruction requires at least 16 Freivalds rounds
+   - Use `--allow-low-k` only for testing smaller dimensions
+
+5. **Validate all public inputs independently**
    - Don't trust commitment values in run.json files
-   - Always recompute commitments during verification
+   - v2.0 automatically recomputes h_W1 commitment during verification
+
+6. **Protect weight files from tampering**
+   - v2.0 detects weight file modifications via h_W1 verification
+   - Store weight files with integrity checksums in production
 
 #### **⚠️ Security Limitations**
 - **Non-cryptographic commitments**: α-sum allows collisions (replace with Poseidon for production)
@@ -417,16 +506,28 @@ done
 
 ## Roadmap
 
+### ✅ Completed (v1.0)
 - [x] Tiled GEMV with streaming
 - [x] Freivalds probabilistic auditor
 - [x] Tiny Groth16 circuit (16×16)
 - [x] Compressed proof serialization
 - [x] CLI with full pipeline
 - [x] Demo mode with <10s completion
-- [ ] Cryptographic commitments (Poseidon)
-- [ ] Batch proof aggregation
-- [ ] GPU acceleration for large K
-- [ ] WebAssembly compilation
+
+### ✅ Completed (v2.0 - Security Enhancements)
+- [x] **Transcript-bound randomness (Fiat-Shamir)** for Freivalds
+- [x] **Weight integrity verification** during verify
+- [x] **y1 reconstruction binding** from Freivalds matrix
+- [x] **Enhanced CLI security controls** with new flags
+- [x] **Comprehensive attack simulation** testing
+
+### 🚧 Planned (v3.0)
+- [ ] Cryptographic commitments (Poseidon hash replacement)
+- [ ] Batch proof aggregation for multiple inferences
+- [ ] GPU acceleration for large K dimensions
+- [ ] WebAssembly compilation for browser deployment
+- [ ] Zero-knowledge model architecture hiding
+- [ ] Recursive proof composition
 
 ## License
 

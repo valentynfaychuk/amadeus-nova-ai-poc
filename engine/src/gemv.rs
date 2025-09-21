@@ -83,6 +83,36 @@ pub fn compute_layer_16x16(w2: &[[i64; 16]; 16], y1: &[i64; 16], scale_num: u64)
     y2
 }
 
+/// Recompute h_W1 during verify by streaming the weights
+/// Uses the same α-sum order as gemv_tiled()
+pub fn recompute_h_w1<R: Read>(mut r: R, k: usize, tile_k: usize, alpha: Fr) -> EngineResult<Fr> {
+    let mut alpha_pow = Fr::from(1u64);
+    let mut h_w1_acc = Fr::from(0u64);
+
+    // Stream in tiles, maintaining the same order as GEMV
+    for tile_start in (0..k).step_by(tile_k) {
+        let tile_end = std::cmp::min(k, tile_start + tile_k);
+        let tile_width = tile_end - tile_start;
+
+        // Read current tile: 16 × tile_width
+        for _i in 0..16 {
+            for _j in 0..tile_width {
+                let weight = r.read_i16::<LittleEndian>()? as i64;
+                let weight_fr = if weight >= 0 {
+                    Fr::from(weight as u64)
+                } else {
+                    -Fr::from((-weight) as u64)
+                };
+
+                h_w1_acc += weight_fr * alpha_pow;
+                alpha_pow *= alpha;
+            }
+        }
+    }
+
+    Ok(h_w1_acc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

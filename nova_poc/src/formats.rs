@@ -34,6 +34,10 @@ pub struct RunConfig {
     pub seed: u64,
     pub freivalds_rounds: usize,
     pub skip_freivalds: bool,
+    /// Optional model identifier for transcript binding
+    pub model_id: Option<String>,
+    /// VK hash for transcript binding (hex string)
+    pub vk_hash: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -173,6 +177,8 @@ mod tests {
                 seed: 42,
                 freivalds_rounds: 32,
                 skip_freivalds: false,
+                model_id: Some("test-model".to_string()),
+                vk_hash: Some("deadbeef".to_string()),
             },
             x0: vec![1, 2, 3, 4],
             y1: vec![5; 16],

@@ -86,6 +86,22 @@ pub struct VerifyArgs {
     /// Skip Freivalds verification
     #[arg(long)]
     pub skip_freivalds: bool,
+
+    /// Use prover's seed instead of transcript-bound seed (for tests)
+    #[arg(long)]
+    pub no_bind_randomness: bool,
+
+    /// Allow k < 16 without reconstruction
+    #[arg(long)]
+    pub allow_low_k: bool,
+
+    /// Optional extra entropy in the transcript (hex string)
+    #[arg(long)]
+    pub block_entropy: Option<String>,
+
+    /// Tile size for recompute function (defaults to value from RunData)
+    #[arg(long)]
+    pub tile_k: Option<usize>,
 }
 
 #[derive(Args)]
