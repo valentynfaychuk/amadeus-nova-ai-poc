@@ -1,8 +1,8 @@
 use ark_bn254::Fr;
-use ark_ff::Field;
+// use ark_ff::Field;  // Unused import
 use std::io::Read;
 use byteorder::{LittleEndian, ReadBytesExt};
-use crate::{EngineResult, commitment::commit_alpha_sum_w1};
+use crate::EngineResult;  // Removed unused commit_alpha_sum_w1
 
 /// Tiled GEMV implementation for streaming large matrices
 /// Computes y1 = W1 · x0 where W1 is 16×K and x0 is length K

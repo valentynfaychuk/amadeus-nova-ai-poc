@@ -1,5 +1,5 @@
 use ark_bn254::Fr;
-use ark_ff::Field;
+// use ark_ff::Field;  // Unused import
 use std::io::{Read, Seek, SeekFrom};
 use byteorder::{LittleEndian, ReadBytesExt};
 use sha2::{Sha256, Digest};

@@ -1,8 +1,8 @@
 use ark_bn254::Fr;
-use ark_ff::Field;
+// use ark_ff::Field;  // Unused import
 use std::io::Read;
 use byteorder::{LittleEndian, ReadBytesExt};
-use crate::{EngineResult, field_to_u64, u64_to_field};
+use crate::EngineResult;  // Removed unused field_to_u64, u64_to_field
 
 /// Alpha value for deterministic alpha-sum commitment
 /// This is non-cryptographic but sufficient for POC

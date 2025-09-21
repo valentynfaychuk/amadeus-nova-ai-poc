@@ -1,6 +1,7 @@
 use ark_bn254::Fr;
-use ark_ff::{Field, PrimeField};
-use std::io::Read;
+// Removed unused imports Field and PrimeField (used in function bodies with full paths)
+// use ark_ff::{Field, PrimeField};
+// use std::io::Read;
 use thiserror::Error;
 
 pub mod commitment;

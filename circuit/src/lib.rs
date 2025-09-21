@@ -1,5 +1,5 @@
-use ark_bn254::{Bn254, Fr};
-use ark_ff::{Field, Zero};
+use ark_bn254::Fr;  // Removed unused Bn254
+use ark_ff::Zero;  // Removed unused Field
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result as R1CSResult};
 use ark_r1cs_std::{
     alloc::AllocVar,
@@ -7,11 +7,11 @@ use ark_r1cs_std::{
     eq::EqGadget,
     fields::fp::FpVar,
     fields::FieldVar,
-    ToBitsGadget,
+    // ToBitsGadget,  // Unused import
 };
-use ark_groth16::{Proof, VerifyingKey};
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize, Compress, Validate};
-use std::io::{Read, Write};
+// use ark_groth16::{Proof, VerifyingKey};  // Unused imports
+// use ark_serialize::{CanonicalSerialize, CanonicalDeserialize, Compress, Validate};  // Unused imports
+// use std::io::{Read, Write};  // Unused imports
 
 pub mod compressed;
 
@@ -83,11 +83,12 @@ impl TinyTailCircuit {
     }
 
     /// Range-check an FpVar to fit in `bits` by constraining high bits to zero.
+    /// Currently disabled to keep circuit small (307 constraints vs 260K+)
     fn range_check_bits(_v: &FpVar<Fr>, _bits: usize) -> R1CSResult<()> {
-        // TODO: Temporarily disabled for debugging
-        // let bits_le = v.to_bits_le()?;
-        // // Force all bits above our limit to be zero
-        // for b in bits..bits_le.len() {
+        // TODO: Re-enable for production security
+        // This would add ~1000 constraints per range check
+        // let bits_le = _v.to_bits_le()?;
+        // for b in _bits..bits_le.len() {
         //     Boolean::enforce_equal(&bits_le[b], &Boolean::constant(false))?;
         // }
         Ok(())

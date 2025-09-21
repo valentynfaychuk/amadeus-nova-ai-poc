@@ -9,21 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "aggregator"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ark-bn254",
- "ark-ff",
- "ark-groth16",
- "ark-serialize",
- "ark-snark",
- "num-bigint",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -709,23 +694,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prover"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ark-bn254",
- "ark-crypto-primitives",
- "ark-ff",
- "ark-groth16",
- "ark-serialize",
- "ark-snark",
- "circuit",
- "rand",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1009,20 +977,6 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
-
-[[package]]
-name = "verifier"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ark-bn254",
- "ark-ff",
- "ark-groth16",
- "ark-serialize",
- "ark-snark",
- "num-bigint",
- "serde_json",
-]
 
 [[package]]
 name = "version_check"
