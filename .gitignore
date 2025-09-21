@@ -1,4 +1,6 @@
-data/instance.json
-out
-batch.json
 target
+out
+keys
+data
+*.local
+*.json
