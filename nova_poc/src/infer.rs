@@ -1,17 +1,20 @@
 use crate::cli::InferArgs;
 use crate::formats::*;
-use crate::demo;
-use engine::EngineConfig;
-use engine::gemv::{gemv_tiled, compute_layer_16x16};
+use anyhow::Result;
 use engine::commitment::{commit_alpha_sum_vec, commit_alpha_sum_w2};
 use engine::freivalds::freivalds_check;
-use anyhow::Result;
+use engine::gemv::{compute_layer_16x16, gemv_tiled};
+use engine::EngineConfig;
+use rand::prelude::*;
 use std::fs::File;
 use std::io::{Seek, SeekFrom};
 use tempfile;
 
 pub fn run_infer(args: InferArgs) -> Result<()> {
-    println!("🚀 Starting inference with K={}, tile_k={}", args.k, args.tile_k);
+    println!(
+        "🚀 Starting inference with K={}, tile_k={}",
+        args.k, args.tile_k
+    );
 
     // Handle preset mode
     if let Some(preset) = &args.preset {
@@ -25,9 +28,18 @@ pub fn run_infer(args: InferArgs) -> Result<()> {
     }
 
     // Validate required paths
-    let weights1_path = args.weights1_path.clone().ok_or_else(|| anyhow::anyhow!("--weights1-path required when not using preset"))?;
-    let weights2_path = args.weights2_path.clone().ok_or_else(|| anyhow::anyhow!("--weights2-path required when not using preset"))?;
-    let x0_path = args.x0_path.clone().ok_or_else(|| anyhow::anyhow!("--x0-path required when not using preset"))?;
+    let weights1_path = args
+        .weights1_path
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("--weights1-path required when not using preset"))?;
+    let weights2_path = args
+        .weights2_path
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("--weights2-path required when not using preset"))?;
+    let x0_path = args
+        .x0_path
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("--x0-path required when not using preset"))?;
 
     // Load data
     println!("📂 Loading input data...");
@@ -36,10 +48,18 @@ pub fn run_infer(args: InferArgs) -> Result<()> {
     let x0 = load_vector(&x0_path)?;
 
     if x0.len() != args.k {
-        anyhow::bail!("Input vector length {} doesn't match K={}", x0.len(), args.k);
+        anyhow::bail!(
+            "Input vector length {} doesn't match K={}",
+            x0.len(),
+            args.k
+        );
     }
 
-    println!("✅ Loaded W1 (16×{}), W2 (16×16), x0 ({})", args.k, x0.len());
+    println!(
+        "✅ Loaded W1 (16×{}), W2 (16×16), x0 ({})",
+        args.k,
+        x0.len()
+    );
 
     // Run the inference pipeline
     run_inference_pipeline(args, w1_reader, w2, x0)
@@ -47,13 +67,38 @@ pub fn run_infer(args: InferArgs) -> Result<()> {
 
 fn run_demo_infer(args: InferArgs) -> Result<()> {
     println!("🎲 Generating random demo data...");
-    let (w1_data, w2, x0) = demo::generate_demo_data(args.k, args.seed)?;
+
+    // Generate demo data inline
+    let mut rng = StdRng::seed_from_u64(args.seed);
+
+    // Generate W1 weights (16×K) as binary data
+    let mut w1_data = Vec::with_capacity(16 * args.k * 2); // 2 bytes per i16
+    for _ in 0..(16 * args.k) {
+        let weight: i16 = rng.gen_range(-100..=100);
+        w1_data.extend_from_slice(&weight.to_le_bytes());
+    }
+
+    // Generate W2 weights (16×16)
+    let mut w2 = [[0i64; 16]; 16];
+    for i in 0..16 {
+        for j in 0..16 {
+            w2[i][j] = rng.gen_range(-50..=50);
+        }
+    }
+
+    // Generate input vector x0 (K elements)
+    let x0: Vec<i64> = (0..args.k).map(|_| rng.gen_range(-25..=25)).collect();
+
     // Write to temp file for demo since we need Seek trait
     let temp_file = tempfile::NamedTempFile::new()?;
     std::fs::write(temp_file.path(), &w1_data)?;
     let w1_reader = File::open(temp_file.path())?;
 
-    println!("✅ Generated W1 (16×{}), W2 (16×16), x0 ({})", args.k, x0.len());
+    println!(
+        "✅ Generated W1 (16×{}), W2 (16×16), x0 ({})",
+        args.k,
+        x0.len()
+    );
 
     run_inference_pipeline(args, w1_reader, w2, x0)
 }
@@ -89,7 +134,10 @@ fn run_inference_pipeline(
         println!("⏭️  Skipping Freivalds verification");
         None
     } else {
-        println!("🔍 Running Freivalds verification ({} rounds)...", args.freivalds_rounds);
+        println!(
+            "🔍 Running Freivalds verification ({} rounds)...",
+            args.freivalds_rounds
+        );
         w1_reader.seek(SeekFrom::Start(0))?; // Reset for Freivalds
         let start_time = std::time::Instant::now();
 
@@ -104,7 +152,10 @@ fn run_inference_pipeline(
         ) {
             Ok(()) => {
                 let freivalds_time = start_time.elapsed();
-                println!("✅ Freivalds passed in {:.3}s", freivalds_time.as_secs_f64());
+                println!(
+                    "✅ Freivalds passed in {:.3}s",
+                    freivalds_time.as_secs_f64()
+                );
                 Some(FreivaldsResult {
                     seed: args.seed,
                     rounds: args.freivalds_rounds,
@@ -171,17 +222,28 @@ fn run_inference_pipeline(
     println!();
     println!("📊 Inference Summary:");
     println!("  • Large layer (16×{}): y1 = W1 · x0", args.k);
-    println!("  • Tail layer (16×16): y2 = floor((W2 · y1) * {} / 2)", args.scale_num);
+    println!(
+        "  • Tail layer (16×16): y2 = floor((W2 · y1) * {} / 2)",
+        args.scale_num
+    );
     if let Some(ref freivalds) = freivalds_result {
         if freivalds.passed {
-            println!("  • Freivalds: ✅ PASSED ({} rounds, ~2^{:.0} soundness)",
-                     freivalds.rounds, -freivalds.soundness_bits);
+            println!(
+                "  • Freivalds: ✅ PASSED ({} rounds, ~2^{:.0} soundness)",
+                freivalds.rounds, -freivalds.soundness_bits
+            );
         } else {
-            println!("  • Freivalds: ❌ FAILED at round {}", freivalds.failed_round.unwrap());
+            println!(
+                "  • Freivalds: ❌ FAILED at round {}",
+                freivalds.failed_round.unwrap()
+            );
         }
     }
     println!("  • Commitments computed and saved");
-    println!("  • Ready for proving with: nova_poc prove {}", args.out.display());
+    println!(
+        "  • Ready for proving with: nova_poc prove {}",
+        args.out.display()
+    );
 
     Ok(())
 }
@@ -216,6 +278,7 @@ mod tests {
         assert_eq!(run_data.x0.len(), 256);
         assert_eq!(run_data.y1.len(), 16);
         assert_eq!(run_data.y2.len(), 16);
-        assert!(run_data.freivalds_result.is_some());
+        // When skip_freivalds is true, freivalds_result should be None
+        assert!(run_data.freivalds_result.is_none());
     }
 }

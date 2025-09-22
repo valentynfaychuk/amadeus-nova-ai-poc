@@ -1,8 +1,8 @@
 use ark_bn254::Fr;
 // use ark_ff::Field;  // Unused import
-use std::io::Read;
+use crate::EngineResult;
 use byteorder::{LittleEndian, ReadBytesExt};
-use crate::EngineResult;  // Removed unused field_to_u64, u64_to_field
+use std::io::Read; // Removed unused field_to_u64, u64_to_field
 
 /// Alpha value for deterministic alpha-sum commitment
 /// This is non-cryptographic but sufficient for POC
@@ -37,7 +37,7 @@ pub fn commit_alpha_sum_w1<R: Read>(
     reader: &mut R,
     rows: usize,
     k: usize,
-    tile_k: usize
+    tile_k: usize,
 ) -> EngineResult<Fr> {
     let alpha = Fr::from(ALPHA);
     let mut alpha_pow = Fr::from(1u64);
@@ -90,8 +90,8 @@ pub fn commit_alpha_sum_w2(w2: &[[i64; 16]; 16]) -> Fr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
     use byteorder::WriteBytesExt;
+    use std::io::Cursor;
 
     #[test]
     fn test_commit_vec() {
@@ -107,8 +107,8 @@ mod tests {
     fn test_commit_w1_streaming() {
         // Create a simple 2x4 matrix streamed as tiles
         let matrix = [
-            [1i16, 2, 3, 4],  // row 0
-            [5i16, 6, 7, 8],  // row 1
+            [1i16, 2, 3, 4], // row 0
+            [5i16, 6, 7, 8], // row 1
         ];
 
         // Serialize as binary stream (row-major, tile order)

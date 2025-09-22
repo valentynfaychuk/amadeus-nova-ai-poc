@@ -1,16 +1,18 @@
 use crate::cli::VerifyArgs;
 use crate::formats::*;
+use anyhow::Result;
+use ark_bn254::{Bn254, Fr};
+use ark_ff::Zero;
+use ark_groth16::Groth16;
 use circuit::compressed;
-use engine::freivalds::{freivalds_check_bound, vk_hash, derive_seed, solve_linear_16, matrix_rank};
-use engine::gemv::recompute_h_w1;
 use engine::commitment::commit_alpha_sum_vec;
 use engine::field_to_i64;
-use ark_bn254::{Bn254, Fr};
-use ark_groth16::Groth16;
-use ark_ff::Zero;
+use engine::freivalds::{
+    derive_seed, freivalds_check_bound, matrix_rank, solve_linear_16, vk_hash,
+};
+use engine::gemv::recompute_h_w1;
 use std::fs::File;
 use std::io::BufReader;
-use anyhow::Result;
 
 pub fn run_verify(args: VerifyArgs) -> Result<()> {
     println!("🔍 Starting verification...");
@@ -21,17 +23,23 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
 
     // Determine file paths
     let vk_path = args.vk_path.clone().unwrap_or_else(|| {
-        args.run_json.parent().unwrap_or_else(|| std::path::Path::new("."))
+        args.run_json
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
             .join("out/vk.bin")
     });
 
     let proof_path = args.proof_path.clone().unwrap_or_else(|| {
-        args.run_json.parent().unwrap_or_else(|| std::path::Path::new("."))
+        args.run_json
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
             .join("out/proof.bin")
     });
 
     let public_inputs_path = args.public_inputs_path.clone().unwrap_or_else(|| {
-        args.run_json.parent().unwrap_or_else(|| std::path::Path::new("."))
+        args.run_json
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
             .join("out/public_inputs.json")
     });
 
@@ -50,7 +58,10 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
             anyhow::anyhow!("--weights1-path required for Freivalds verification")
         })?;
 
-        let y1: [i64; 16] = run_data.y1.as_slice().try_into()
+        let y1: [i64; 16] = run_data
+            .y1
+            .as_slice()
+            .try_into()
             .map_err(|_| anyhow::anyhow!("y1 must have exactly 16 elements"))?;
 
         // Step 2a: Recompute h_W1 during verify
@@ -64,7 +75,9 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
         // Convert stored h_w1 to field element for comparison
         let h_w1_stored = string_to_field(&run_data.commitments.h_w1)?;
         if h_w1_recomputed != h_w1_stored {
-            anyhow::bail!("h_W1 mismatch: recomputed != stored. Weights file may be corrupted or modified.");
+            anyhow::bail!(
+                "h_W1 mismatch: recomputed != stored. Weights file may be corrupted or modified."
+            );
         }
         println!("   ✓ h_W1 commitment verified");
 
@@ -106,7 +119,10 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
         ) {
             Ok((r_matrix, s_vector)) => {
                 let freivalds_time = start_time.elapsed();
-                println!("✅ Freivalds verification passed in {:.3}s", freivalds_time.as_secs_f64());
+                println!(
+                    "✅ Freivalds verification passed in {:.3}s",
+                    freivalds_time.as_secs_f64()
+                );
 
                 // Step 2d: Reconstruct y1 from Freivalds when k >= 16
                 if run_data.config.k >= 16 {
@@ -114,9 +130,14 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
 
                     if r_matrix.len() < 16 {
                         if args.allow_low_k {
-                            println!("   ⚠️ Insufficient rounds for y1 reconstruction (--allow-low-k)");
+                            println!(
+                                "   ⚠️ Insufficient rounds for y1 reconstruction (--allow-low-k)"
+                            );
                         } else {
-                            anyhow::bail!("Need at least 16 Freivalds rounds for y1 reconstruction, got {}", r_matrix.len());
+                            anyhow::bail!(
+                                "Need at least 16 Freivalds rounds for y1 reconstruction, got {}",
+                                r_matrix.len()
+                            );
                         }
                     } else {
                         // Take first 16 rounds to form R matrix (16x16)
@@ -131,7 +152,10 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
                             if args.allow_low_k {
                                 println!("   ⚠️ Matrix R has rank {} < 16, skipping reconstruction (--allow-low-k)", rank);
                             } else {
-                                anyhow::bail!("Matrix R has insufficient rank {} < 16 for unique solution", rank);
+                                anyhow::bail!(
+                                    "Matrix R has insufficient rank {} < 16 for unique solution",
+                                    rank
+                                );
                             }
                         } else {
                             // Solve R^T * y1 = s for first 16 rounds
@@ -140,7 +164,8 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
                             match solve_linear_16(r_t, s_subset) {
                                 Some(y1_reconstructed) => {
                                     // Commit the recovered y1 using β-sum
-                                    let y1_i64: Vec<i64> = y1_reconstructed.iter()
+                                    let y1_i64: Vec<i64> = y1_reconstructed
+                                        .iter()
                                         .map(|&fr| field_to_i64(fr))
                                         .collect();
 
@@ -154,15 +179,23 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
                                     }
                                 }
                                 None => {
-                                    anyhow::bail!("Failed to solve linear system for y1 reconstruction");
+                                    anyhow::bail!(
+                                        "Failed to solve linear system for y1 reconstruction"
+                                    );
                                 }
                             }
                         }
                     }
                 } else if !args.allow_low_k {
-                    anyhow::bail!("k={} < 16, cannot perform y1 reconstruction. Use --allow-low-k to skip.", run_data.config.k);
+                    anyhow::bail!(
+                        "k={} < 16, cannot perform y1 reconstruction. Use --allow-low-k to skip.",
+                        run_data.config.k
+                    );
                 } else {
-                    println!("   ⚠️ k={} < 16, skipping y1 reconstruction (--allow-low-k)", run_data.config.k);
+                    println!(
+                        "   ⚠️ k={} < 16, skipping y1 reconstruction (--allow-low-k)",
+                        run_data.config.k
+                    );
                 }
 
                 // Check consistency with recorded result
@@ -186,7 +219,10 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
                     if recorded.failed_round == Some(round) {
                         println!("   ✓ Consistent with recorded failure at round {}", round);
                     } else {
-                        println!("   ⚠️ Failed at different round than recorded ({:?})", recorded.failed_round);
+                        println!(
+                            "   ⚠️ Failed at different round than recorded ({:?})",
+                            recorded.failed_round
+                        );
                     }
                 } else {
                     anyhow::bail!("Freivalds failed but no recorded result to compare");
@@ -212,7 +248,10 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to deserialize proof: {}", e))?;
 
     // Step 4: Load public inputs
-    println!("📊 Loading public inputs from {}...", public_inputs_path.display());
+    println!(
+        "📊 Loading public inputs from {}...",
+        public_inputs_path.display()
+    );
     let public_inputs = load_public_inputs(&public_inputs_path)?;
 
     // Step 5: Verify public inputs consistency
@@ -227,7 +266,10 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
     let verify_time = start_time.elapsed();
 
     if verification_result {
-        println!("✅ Groth16 proof verification PASSED in {:.3}s", verify_time.as_secs_f64());
+        println!(
+            "✅ Groth16 proof verification PASSED in {:.3}s",
+            verify_time.as_secs_f64()
+        );
     } else {
         println!("❌ Groth16 proof verification FAILED");
         anyhow::bail!("Proof verification failed");
@@ -242,7 +284,10 @@ pub fn run_verify(args: VerifyArgs) -> Result<()> {
 }
 
 /// Verify that public inputs match the commitments in run data
-fn verify_public_inputs_consistency(run_data: &RunData, public_inputs: &[ark_bn254::Fr]) -> Result<()> {
+fn verify_public_inputs_consistency(
+    run_data: &RunData,
+    public_inputs: &[ark_bn254::Fr],
+) -> Result<()> {
     if public_inputs.len() != 5 {
         anyhow::bail!("Expected 5 public inputs, got {}", public_inputs.len());
     }
@@ -258,7 +303,12 @@ fn verify_public_inputs_consistency(run_data: &RunData, public_inputs: &[ark_bn2
 
     for (i, (&actual, &expected)) in public_inputs.iter().zip(expected.iter()).enumerate() {
         if actual != expected {
-            anyhow::bail!("Public input {} mismatch: actual={:?}, expected={:?}", i, actual, expected);
+            anyhow::bail!(
+                "Public input {} mismatch: actual={:?}, expected={:?}",
+                i,
+                actual,
+                expected
+            );
         }
     }
 
@@ -279,11 +329,15 @@ fn print_verification_summary(run_data: &RunData, args: &VerifyArgs) {
     if !args.skip_freivalds {
         if let Some(ref freivalds) = run_data.freivalds_result {
             if freivalds.passed {
-                println!("  • Freivalds: ✅ PASSED ({} rounds, ~2^{:.0} soundness)",
-                         freivalds.rounds, -freivalds.soundness_bits);
+                println!(
+                    "  • Freivalds: ✅ PASSED ({} rounds, ~2^{:.0} soundness)",
+                    freivalds.rounds, -freivalds.soundness_bits
+                );
             } else {
-                println!("  • Freivalds: ❌ FAILED at round {}",
-                         freivalds.failed_round.unwrap_or(0));
+                println!(
+                    "  • Freivalds: ❌ FAILED at round {}",
+                    freivalds.failed_round.unwrap_or(0)
+                );
             }
         }
     }
@@ -299,20 +353,35 @@ fn print_verification_summary(run_data: &RunData, args: &VerifyArgs) {
 
     // Show commitment values (first few chars for brevity)
     println!("  • Commitments (first 16 chars):");
-    println!("    - h_W1: {}...", &run_data.commitments.h_w1[..16.min(run_data.commitments.h_w1.len())]);
-    println!("    - h_W2: {}...", &run_data.commitments.h_w2[..16.min(run_data.commitments.h_w2.len())]);
-    println!("    - h_X:  {}...", &run_data.commitments.h_x[..16.min(run_data.commitments.h_x.len())]);
-    println!("    - h_y1: {}...", &run_data.commitments.h_y1[..16.min(run_data.commitments.h_y1.len())]);
-    println!("    - h_Y:  {}...", &run_data.commitments.h_y[..16.min(run_data.commitments.h_y.len())]);
+    println!(
+        "    - h_W1: {}...",
+        &run_data.commitments.h_w1[..16.min(run_data.commitments.h_w1.len())]
+    );
+    println!(
+        "    - h_W2: {}...",
+        &run_data.commitments.h_w2[..16.min(run_data.commitments.h_w2.len())]
+    );
+    println!(
+        "    - h_X:  {}...",
+        &run_data.commitments.h_x[..16.min(run_data.commitments.h_x.len())]
+    );
+    println!(
+        "    - h_y1: {}...",
+        &run_data.commitments.h_y1[..16.min(run_data.commitments.h_y1.len())]
+    );
+    println!(
+        "    - h_Y:  {}...",
+        &run_data.commitments.h_y[..16.min(run_data.commitments.h_y.len())]
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use crate::prove::{run_setup, run_prove};
-    use crate::infer::run_infer;
     use crate::cli::*;
+    use crate::infer::run_infer;
+    use crate::prove::{run_prove, run_setup};
+    use tempfile::TempDir;
 
     #[test]
     fn test_end_to_end_verification() {

@@ -1,6 +1,5 @@
-use ark_bn254::Fr;  // Removed unused Bn254
-use ark_ff::Zero;  // Removed unused Field
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result as R1CSResult};
+use ark_bn254::Fr; // Removed unused Bn254
+use ark_ff::Zero; // Removed unused Field
 use ark_r1cs_std::{
     alloc::AllocVar,
     boolean::Boolean,
@@ -9,6 +8,7 @@ use ark_r1cs_std::{
     fields::FieldVar,
     // ToBitsGadget,  // Unused import
 };
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result as R1CSResult};
 // use ark_groth16::{Proof, VerifyingKey};  // Unused imports
 // use ark_serialize::{CanonicalSerialize, CanonicalDeserialize, Compress, Validate};  // Unused imports
 // use std::io::{Read, Write};  // Unused imports
@@ -22,7 +22,7 @@ mod debug_test;
 mod minimal_test;
 
 /// Tiny Groth16 circuit for 16×16 tail layer only
-pub const N: usize = 16;    // Fixed 16×16 layer size for tail
+pub const N: usize = 16; // Fixed 16×16 layer size for tail
 
 /// Tiny Groth16 circuit for proving only the 16×16 tail layer computation
 /// with commitment-based public inputs to keep proof size small
@@ -37,10 +37,10 @@ pub struct TinyTailCircuit {
     /// Scale numerator for quantization (public, bounded to 8 bits)
     pub scale_num: Fr,
     /// Public commitments (hash-based, not cryptographic for POC)
-    pub h_w2: Fr,     // commitment to W2
-    pub h_x: Fr,      // commitment to original input x0
-    pub h_y1: Fr,     // commitment to y1
-    pub h_y: Fr,      // commitment to final output y2
+    pub h_w2: Fr, // commitment to W2
+    pub h_x: Fr,  // commitment to original input x0
+    pub h_y1: Fr, // commitment to y1
+    pub h_y: Fr,  // commitment to final output y2
     /// Division quotients and remainders for floor operation (private witnesses)
     pub div_quotients: [Fr; N],
     pub div_remainders: [Fr; N],
@@ -52,7 +52,10 @@ impl TinyTailCircuit {
     ///
     /// ⚠️  NON-CRYPTOGRAPHIC: This is a linear map, collisions exist.
     /// For production, replace with Poseidon hash using vetted BN254 parameters.
-    fn commit_matrix(cs: ConstraintSystemRef<Fr>, w_vars: &Vec<Vec<FpVar<Fr>>>) -> R1CSResult<FpVar<Fr>> {
+    fn commit_matrix(
+        cs: ConstraintSystemRef<Fr>,
+        w_vars: &Vec<Vec<FpVar<Fr>>>,
+    ) -> R1CSResult<FpVar<Fr>> {
         let alpha = Fr::from(5u64); // Fixed base for deterministic commitment
         let mut alpha_pow = FpVar::<Fr>::new_constant(cs.clone(), Fr::from(1u64))?;
         let alpha_c = FpVar::<Fr>::new_constant(cs.clone(), alpha)?;
@@ -69,7 +72,10 @@ impl TinyTailCircuit {
 
     /// Deterministic β-sum commitment for vector.
     /// h = Σ v[i] * β^i with fixed β=7.
-    fn commit_vector(cs: ConstraintSystemRef<Fr>, v_vars: &Vec<FpVar<Fr>>) -> R1CSResult<FpVar<Fr>> {
+    fn commit_vector(
+        cs: ConstraintSystemRef<Fr>,
+        v_vars: &Vec<FpVar<Fr>>,
+    ) -> R1CSResult<FpVar<Fr>> {
         let beta = Fr::from(7u64); // Fixed base for vector commitment
         let mut beta_pow = FpVar::<Fr>::new_constant(cs.clone(), Fr::from(1u64))?;
         let beta_c = FpVar::<Fr>::new_constant(cs.clone(), beta)?;

@@ -1,28 +1,38 @@
 use ark_bn254::Bn254;
 use ark_groth16::{Proof, VerifyingKey};
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize, Compress, Validate};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
 use std::io::{Read, Write};
 
 /// Serialize Groth16 proof using compression to minimize size (~200-300 bytes)
-pub fn serialize_proof_compressed<W: Write>(proof: &Proof<Bn254>, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
+pub fn serialize_proof_compressed<W: Write>(
+    proof: &Proof<Bn254>,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
     proof.serialize_with_mode(writer, Compress::Yes)?;
     Ok(())
 }
 
 /// Deserialize compressed Groth16 proof
-pub fn deserialize_proof_compressed<R: Read>(reader: &mut R) -> Result<Proof<Bn254>, Box<dyn std::error::Error>> {
+pub fn deserialize_proof_compressed<R: Read>(
+    reader: &mut R,
+) -> Result<Proof<Bn254>, Box<dyn std::error::Error>> {
     let proof = Proof::<Bn254>::deserialize_with_mode(reader, Compress::Yes, Validate::Yes)?;
     Ok(proof)
 }
 
 /// Serialize verification key using compression
-pub fn serialize_vk_compressed<W: Write>(vk: &VerifyingKey<Bn254>, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
+pub fn serialize_vk_compressed<W: Write>(
+    vk: &VerifyingKey<Bn254>,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
     vk.serialize_with_mode(writer, Compress::Yes)?;
     Ok(())
 }
 
 /// Deserialize compressed verification key
-pub fn deserialize_vk_compressed<R: Read>(reader: &mut R) -> Result<VerifyingKey<Bn254>, Box<dyn std::error::Error>> {
+pub fn deserialize_vk_compressed<R: Read>(
+    reader: &mut R,
+) -> Result<VerifyingKey<Bn254>, Box<dyn std::error::Error>> {
     let vk = VerifyingKey::<Bn254>::deserialize_with_mode(reader, Compress::Yes, Validate::Yes)?;
     Ok(vk)
 }
@@ -46,29 +56,35 @@ pub fn estimate_compressed_vk_size() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TinyTailCircuit;
     use ark_bn254::Fr;
     use ark_groth16::Groth16;
     use ark_snark::SNARK;
     use rand::rngs::OsRng;
-    use crate::TinyTailCircuit;
 
     #[test]
     fn test_proof_compression_roundtrip() {
         // Create a valid circuit for testing with proper witness computation
-        let w2 = [[Fr::from(1u64); 16]; 16]; // Identity matrix
+        // Create actual identity matrix (not all 1s)
+        let mut w2 = [[Fr::from(0u64); 16]; 16];
+        for i in 0..16 {
+            w2[i][i] = Fr::from(1u64); // Set diagonal to 1
+        }
         let y1 = [Fr::from(2u64); 16]; // Input vector
         let scale_num = Fr::from(3u64);
 
         // Compute y2 = floor((W2 · y1) * scale_num / 2)
-        // With identity matrix and y1=[2], we get: y2[i] = floor(2 * 3 / 2) = floor(3) = 3
+        // With identity matrix and y1=[2], we get: (W2 · y1)[i] = 2
+        // numed = 2 * 3 = 6
+        // y2[i] = floor(6 / 2) = floor(3) = 3
         let y2 = [Fr::from(3u64); 16];
 
-        // Compute division witnesses: 2 * 3 = 2 * 3 + 0, so quotient=3, remainder=0
+        // Compute division witnesses: 6 = 2 * 3 + 0, so quotient=3, remainder=0
         let div_quotients = [Fr::from(3u64); 16];
         let div_remainders = [Fr::from(0u64); 16];
 
         // Compute commitments using the same functions as the circuit
-        use crate::{TinyTailCircuit};
+        use crate::TinyTailCircuit;
         let alpha = Fr::from(5u64);
         let beta = Fr::from(7u64);
 
@@ -112,7 +128,8 @@ mod tests {
         };
 
         let mut rng = OsRng;
-        let (pk, _vk) = Groth16::<Bn254>::circuit_specific_setup(circuit.clone(), &mut rng).unwrap();
+        let (pk, _vk) =
+            Groth16::<Bn254>::circuit_specific_setup(circuit.clone(), &mut rng).unwrap();
         let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng).unwrap();
 
         // Test proof compression

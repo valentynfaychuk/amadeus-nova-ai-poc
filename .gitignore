@@ -7,3 +7,15 @@ bench
 *.json
 .bench_runs
 .idea
+
+# Script-generated artifacts
+*.bin
+*.csv
+*.png
+*.pdf
+*.log
+*.tmp
+benchmark_plots/
+proof_*/
+bench_out_*/
+attack_workspace/

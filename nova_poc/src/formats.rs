@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
+use anyhow::Result;
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
-use anyhow::Result;
 // use flate2::read::GzDecoder;
 
 /// Run data structure saved to run.json
@@ -157,7 +157,6 @@ pub fn load_public_inputs<P: AsRef<Path>>(path: P) -> Result<Vec<Fr>> {
 mod tests {
     use super::*;
     use tempfile::NamedTempFile;
-    use std::io::Write;
 
     #[test]
     fn test_field_string_roundtrip() {

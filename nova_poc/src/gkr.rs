@@ -1,16 +1,15 @@
 use crate::cli::{ProveGkrArgs, VerifyGkrArgs};
-use crate::formats::*;
-use ark_serialize::CanonicalSerialize;
 use anyhow::Result;
+use ark_ff::Zero;
+use ark_serialize::CanonicalSerialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use zk_gkr::Fr;
-use ark_ff::Zero;
-use zk_gkr::transcript::FiatShamirTranscript;
 use zk_gkr::merkle_poseidon::PoseidonMerkleTree;
 use zk_gkr::mle::MleUtils;
-use zk_gkr::sumcheck::{SumCheckProver, SumCheckVerifier};
 use zk_gkr::proof::{GkrProof, GkrPublicInputs};
+use zk_gkr::sumcheck::{SumCheckProver, SumCheckVerifier};
+use zk_gkr::transcript::FiatShamirTranscript;
+use zk_gkr::Fr;
 
 /// Run GKR proof generation
 pub fn run_prove_gkr(args: ProveGkrArgs) -> Result<()> {
@@ -33,7 +32,13 @@ pub fn run_prove_gkr(args: ProveGkrArgs) -> Result<()> {
     let a = (args.m as f64).log2().ceil() as usize;
     let b = (args.k as f64).log2().ceil() as usize;
 
-    println!("   Padded dimensions: 2^{}×2^{} = {}×{}", a, b, 1 << a, 1 << b);
+    println!(
+        "   Padded dimensions: 2^{}×2^{} = {}×{}",
+        a,
+        b,
+        1 << a,
+        1 << b
+    );
 
     let w_data = MleUtils::matrix_to_hypercube_order(&w_fr, args.m, args.k)?;
     let x_data = MleUtils::vector_to_hypercube_order(&x_fr, args.k)?;
@@ -114,7 +119,11 @@ pub fn run_prove_gkr(args: ProveGkrArgs) -> Result<()> {
     println!("✅ GKR proof generation complete!");
     println!("   Proof file: {}", proof_path.display());
     println!("   Public inputs: {}", public_path.display());
-    println!("   Proof size: {} bytes ({:.1} KB)", proof_size, proof_size as f64 / 1024.0);
+    println!(
+        "   Proof size: {} bytes ({:.1} KB)",
+        proof_size,
+        proof_size as f64 / 1024.0
+    );
 
     Ok(())
 }
@@ -130,7 +139,10 @@ pub fn run_verify_gkr(args: VerifyGkrArgs) -> Result<()> {
     let proof = GkrProof::load_from_file(&args.proof_path.to_string_lossy())?;
     let public_inputs = GkrPublicInputs::load_from_file(&args.public_path.to_string_lossy())?;
 
-    println!("   Matrix dimensions: {}×{}", public_inputs.m, public_inputs.k);
+    println!(
+        "   Matrix dimensions: {}×{}",
+        public_inputs.m, public_inputs.k
+    );
     println!("   Claimed value: 0x{}", field_to_hex(&public_inputs.c));
 
     // Verify consistency between proof and public inputs
@@ -190,7 +202,10 @@ pub fn run_verify_gkr(args: VerifyGkrArgs) -> Result<()> {
 
     if verification_result {
         println!("✅ GKR proof verification PASSED!");
-        println!("   Verification time: {:.2} ms", verification_time.as_secs_f64() * 1000.0);
+        println!(
+            "   Verification time: {:.2} ms",
+            verification_time.as_secs_f64() * 1000.0
+        );
 
         if args.with_tail {
             println!("⚠️  Note: Groth16 tail verification not yet implemented");
@@ -351,8 +366,14 @@ pub fn run_demo(seed: u64, m: usize, k: usize) -> Result<()> {
     let verify_time = verify_start.elapsed();
 
     println!("✅ Demo completed successfully!");
-    println!("   Proving time: {:.2} ms", prove_time.as_secs_f64() * 1000.0);
-    println!("   Verification time: {:.2} ms", verify_time.as_secs_f64() * 1000.0);
+    println!(
+        "   Proving time: {:.2} ms",
+        prove_time.as_secs_f64() * 1000.0
+    );
+    println!(
+        "   Verification time: {:.2} ms",
+        verify_time.as_secs_f64() * 1000.0
+    );
 
     // Clean up temporary files
     let _ = fs::remove_dir_all(&temp_dir);
@@ -377,7 +398,14 @@ pub fn run_benchmark(sizes_str: String, repeats: usize, output_path: String) -> 
 
     // Write CSV header
     csv_writer.write_record(&[
-        "timestamp", "m", "k", "run", "stage", "time_ms", "memory_mb", "proof_size_kb"
+        "timestamp",
+        "m",
+        "k",
+        "run",
+        "stage",
+        "time_ms",
+        "memory_mb",
+        "proof_size_kb",
     ])?;
 
     for &k in &sizes {
@@ -465,10 +493,12 @@ pub fn run_benchmark(sizes_str: String, repeats: usize, output_path: String) -> 
             // Clean up
             let _ = fs::remove_dir_all(&run_dir);
 
-            println!("    Prove: {:.2}ms, Verify: {:.2}ms, Proof: {:.1}KB",
-                     prove_time.as_secs_f64() * 1000.0,
-                     verify_time.as_secs_f64() * 1000.0,
-                     proof_size);
+            println!(
+                "    Prove: {:.2}ms, Verify: {:.2}ms, Proof: {:.1}KB",
+                prove_time.as_secs_f64() * 1000.0,
+                verify_time.as_secs_f64() * 1000.0,
+                proof_size
+            );
         }
     }
 

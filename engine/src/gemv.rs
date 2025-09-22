@@ -1,8 +1,8 @@
 use ark_bn254::Fr;
 // use ark_ff::Field;  // Unused import
-use std::io::Read;
+use crate::EngineResult;
 use byteorder::{LittleEndian, ReadBytesExt};
-use crate::EngineResult;  // Removed unused commit_alpha_sum_w1
+use std::io::Read; // Removed unused commit_alpha_sum_w1
 
 /// Tiled GEMV implementation for streaming large matrices
 /// Computes y1 = W1 · x0 where W1 is 16×K and x0 is length K
@@ -116,8 +116,8 @@ pub fn recompute_h_w1<R: Read>(mut r: R, k: usize, tile_k: usize, alpha: Fr) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
     use byteorder::WriteBytesExt;
+    use std::io::Cursor;
 
     #[test]
     fn test_gemv_tiled_vs_naive() {

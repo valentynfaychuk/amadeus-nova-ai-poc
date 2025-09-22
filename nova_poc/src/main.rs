@@ -1,12 +1,11 @@
-use clap::{Parser, Subcommand};
 use anyhow::Result;
+use clap::{Parser, Subcommand};
 
 mod cli;
+mod formats;
 mod infer;
 mod prove;
 mod verify;
-mod demo;
-mod formats;
 
 use cli::*;
 
@@ -58,6 +57,10 @@ fn main() -> Result<()> {
         Commands::Prove(args) => gkr::run_prove_gkr(args),
         Commands::Verify(args) => gkr::run_verify_gkr(args),
         Commands::Demo { seed, m, k } => gkr::run_demo(seed, m, k),
-        Commands::Benchmark { sizes, repeats, output } => gkr::run_benchmark(sizes, repeats, output),
+        Commands::Benchmark {
+            sizes,
+            repeats,
+            output,
+        } => gkr::run_benchmark(sizes, repeats, output),
     }
 }

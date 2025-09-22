@@ -1,7 +1,9 @@
-use crate::{Fr, Result, GkrError, DOMAIN_GKR_V1, DOMAIN_GKR_U, DOMAIN_GKR_ROUND, DOMAIN_GKR_FINAL};
+use crate::{
+    Fr, GkrError, Result, DOMAIN_GKR_FINAL, DOMAIN_GKR_ROUND, DOMAIN_GKR_U, DOMAIN_GKR_V1,
+};
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 /// Fiat-Shamir transcript for GKR protocol
 #[derive(Debug, Clone)]
@@ -12,9 +14,7 @@ pub struct FiatShamirTranscript {
 impl FiatShamirTranscript {
     /// Create a new transcript with initial domain separation
     pub fn new() -> Result<Self> {
-        let mut transcript = Self {
-            state: Vec::new(),
-        };
+        let mut transcript = Self { state: Vec::new() };
 
         // Domain separation for GKR protocol
         transcript.absorb_bytes(DOMAIN_GKR_V1);
@@ -29,7 +29,8 @@ impl FiatShamirTranscript {
     /// Absorb a field element
     pub fn absorb_fr(&mut self, element: &Fr) {
         let mut bytes = Vec::new();
-        element.serialize_compressed(&mut bytes)
+        element
+            .serialize_compressed(&mut bytes)
             .expect("Field element serialization should not fail");
         self.absorb_bytes(&bytes);
     }
@@ -184,12 +185,26 @@ mod tests {
         let salt = "deadbeef";
 
         let mut transcript1 = FiatShamirTranscript::new_seeded(
-            &h_w, &h_x, 16, 4096, Some("model1"), Some("vk1"), salt
-        ).unwrap();
+            &h_w,
+            &h_x,
+            16,
+            4096,
+            Some("model1"),
+            Some("vk1"),
+            salt,
+        )
+        .unwrap();
 
         let mut transcript2 = FiatShamirTranscript::new_seeded(
-            &h_w, &h_x, 16, 4096, Some("model1"), Some("vk1"), salt
-        ).unwrap();
+            &h_w,
+            &h_x,
+            16,
+            4096,
+            Some("model1"),
+            Some("vk1"),
+            salt,
+        )
+        .unwrap();
 
         let u1 = transcript1.derive_u_vector(16).unwrap();
         let u2 = transcript2.derive_u_vector(16).unwrap();

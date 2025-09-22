@@ -1,9 +1,6 @@
-use crate::{Fr, Result, GkrError};
 use crate::sumcheck::SumCheckProof;
-use ark_ff::{Zero, One};
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
-use serde::{Serialize, Deserialize};
-use std::io::{Read, Write};
+use crate::{Fr, GkrError, Result};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 /// Complete GKR proof structure
 #[derive(Debug, Clone)]
@@ -82,14 +79,17 @@ impl GkrProof {
         bytes.extend_from_slice(&(self.b as u32).to_le_bytes());
 
         // Serialize field elements
-        self.h_w.serialize_compressed(&mut bytes)
-            .map_err(|e| GkrError::SerializationError(format!("h_w serialization failed: {:?}", e)))?;
+        self.h_w.serialize_compressed(&mut bytes).map_err(|e| {
+            GkrError::SerializationError(format!("h_w serialization failed: {:?}", e))
+        })?;
 
-        self.h_x.serialize_compressed(&mut bytes)
-            .map_err(|e| GkrError::SerializationError(format!("h_x serialization failed: {:?}", e)))?;
+        self.h_x.serialize_compressed(&mut bytes).map_err(|e| {
+            GkrError::SerializationError(format!("h_x serialization failed: {:?}", e))
+        })?;
 
-        self.c.serialize_compressed(&mut bytes)
-            .map_err(|e| GkrError::SerializationError(format!("c serialization failed: {:?}", e)))?;
+        self.c.serialize_compressed(&mut bytes).map_err(|e| {
+            GkrError::SerializationError(format!("c serialization failed: {:?}", e))
+        })?;
 
         // Serialize salt
         let salt_bytes = self.salt.as_bytes();
@@ -110,57 +110,101 @@ impl GkrProof {
 
         // Read dimensions
         if data.len() < cursor + 16 {
-            return Err(GkrError::SerializationError("Insufficient data for dimensions".to_string()));
+            return Err(GkrError::SerializationError(
+                "Insufficient data for dimensions".to_string(),
+            ));
         }
 
-        let m = u32::from_le_bytes([data[cursor], data[cursor+1], data[cursor+2], data[cursor+3]]) as usize;
+        let m = u32::from_le_bytes([
+            data[cursor],
+            data[cursor + 1],
+            data[cursor + 2],
+            data[cursor + 3],
+        ]) as usize;
         cursor += 4;
-        let k = u32::from_le_bytes([data[cursor], data[cursor+1], data[cursor+2], data[cursor+3]]) as usize;
+        let k = u32::from_le_bytes([
+            data[cursor],
+            data[cursor + 1],
+            data[cursor + 2],
+            data[cursor + 3],
+        ]) as usize;
         cursor += 4;
-        let a = u32::from_le_bytes([data[cursor], data[cursor+1], data[cursor+2], data[cursor+3]]) as usize;
+        let a = u32::from_le_bytes([
+            data[cursor],
+            data[cursor + 1],
+            data[cursor + 2],
+            data[cursor + 3],
+        ]) as usize;
         cursor += 4;
-        let b = u32::from_le_bytes([data[cursor], data[cursor+1], data[cursor+2], data[cursor+3]]) as usize;
+        let b = u32::from_le_bytes([
+            data[cursor],
+            data[cursor + 1],
+            data[cursor + 2],
+            data[cursor + 3],
+        ]) as usize;
         cursor += 4;
 
         // Read field elements
-        let h_w = Fr::deserialize_compressed(&data[cursor..])
-            .map_err(|e| GkrError::SerializationError(format!("h_w deserialization failed: {:?}", e)))?;
+        let h_w = Fr::deserialize_compressed(&data[cursor..]).map_err(|e| {
+            GkrError::SerializationError(format!("h_w deserialization failed: {:?}", e))
+        })?;
         cursor += h_w.serialized_size(ark_serialize::Compress::Yes);
 
-        let h_x = Fr::deserialize_compressed(&data[cursor..])
-            .map_err(|e| GkrError::SerializationError(format!("h_x deserialization failed: {:?}", e)))?;
+        let h_x = Fr::deserialize_compressed(&data[cursor..]).map_err(|e| {
+            GkrError::SerializationError(format!("h_x deserialization failed: {:?}", e))
+        })?;
         cursor += h_x.serialized_size(ark_serialize::Compress::Yes);
 
-        let c = Fr::deserialize_compressed(&data[cursor..])
-            .map_err(|e| GkrError::SerializationError(format!("c deserialization failed: {:?}", e)))?;
+        let c = Fr::deserialize_compressed(&data[cursor..]).map_err(|e| {
+            GkrError::SerializationError(format!("c deserialization failed: {:?}", e))
+        })?;
         cursor += c.serialized_size(ark_serialize::Compress::Yes);
 
         // Read salt
         if data.len() < cursor + 4 {
-            return Err(GkrError::SerializationError("Insufficient data for salt length".to_string()));
+            return Err(GkrError::SerializationError(
+                "Insufficient data for salt length".to_string(),
+            ));
         }
 
-        let salt_len = u32::from_le_bytes([data[cursor], data[cursor+1], data[cursor+2], data[cursor+3]]) as usize;
+        let salt_len = u32::from_le_bytes([
+            data[cursor],
+            data[cursor + 1],
+            data[cursor + 2],
+            data[cursor + 3],
+        ]) as usize;
         cursor += 4;
 
         if data.len() < cursor + salt_len {
-            return Err(GkrError::SerializationError("Insufficient data for salt".to_string()));
+            return Err(GkrError::SerializationError(
+                "Insufficient data for salt".to_string(),
+            ));
         }
 
-        let salt = String::from_utf8(data[cursor..cursor + salt_len].to_vec())
-            .map_err(|e| GkrError::SerializationError(format!("Salt UTF-8 decoding failed: {}", e)))?;
+        let salt = String::from_utf8(data[cursor..cursor + salt_len].to_vec()).map_err(|e| {
+            GkrError::SerializationError(format!("Salt UTF-8 decoding failed: {}", e))
+        })?;
         cursor += salt_len;
 
         // Read sum-check proof
         if data.len() < cursor + 4 {
-            return Err(GkrError::SerializationError("Insufficient data for sumcheck length".to_string()));
+            return Err(GkrError::SerializationError(
+                "Insufficient data for sumcheck length".to_string(),
+            ));
         }
 
-        let sumcheck_len = u32::from_le_bytes([data[cursor], data[cursor+1], data[cursor+2], data[cursor+3]]) as usize;
+        let sumcheck_len = u32::from_le_bytes([
+            data[cursor],
+            data[cursor + 1],
+            data[cursor + 2],
+            data[cursor + 3],
+        ]) as usize;
         cursor += 4;
 
         if data.len() < cursor + sumcheck_len {
-            return Err(GkrError::SerializationError("Insufficient data for sumcheck proof".to_string()));
+            return Err(GkrError::SerializationError(
+                "Insufficient data for sumcheck proof".to_string(),
+            ));
         }
 
         let sumcheck_bytes = &data[cursor..cursor + sumcheck_len];
@@ -194,15 +238,17 @@ impl GkrProof {
     /// Save proof to file
     pub fn save_to_file(&self, path: &str) -> Result<()> {
         let bytes = self.to_bytes()?;
-        std::fs::write(path, bytes)
-            .map_err(|e| GkrError::SerializationError(format!("Failed to write proof file: {}", e)))?;
+        std::fs::write(path, bytes).map_err(|e| {
+            GkrError::SerializationError(format!("Failed to write proof file: {}", e))
+        })?;
         Ok(())
     }
 
     /// Load proof from file
     pub fn load_from_file(path: &str) -> Result<Self> {
-        let bytes = std::fs::read(path)
-            .map_err(|e| GkrError::SerializationError(format!("Failed to read proof file: {}", e)))?;
+        let bytes = std::fs::read(path).map_err(|e| {
+            GkrError::SerializationError(format!("Failed to read proof file: {}", e))
+        })?;
         Self::from_bytes(&bytes)
     }
 
@@ -212,7 +258,11 @@ impl GkrProof {
     }
 
     /// Extract public inputs from the proof
-    pub fn public_inputs(&self, model_id: Option<String>, vk_hash: Option<String>) -> GkrPublicInputs {
+    pub fn public_inputs(
+        &self,
+        model_id: Option<String>,
+        vk_hash: Option<String>,
+    ) -> GkrPublicInputs {
         GkrPublicInputs {
             m: self.m,
             k: self.k,
@@ -230,39 +280,66 @@ impl GkrProof {
         let mut bytes = Vec::new();
 
         // Serialize claimed sum
-        self.sumcheck_proof.claimed_sum.serialize_compressed(&mut bytes)
-            .map_err(|e| GkrError::SerializationError(format!("Claimed sum serialization failed: {:?}", e)))?;
+        self.sumcheck_proof
+            .claimed_sum
+            .serialize_compressed(&mut bytes)
+            .map_err(|e| {
+                GkrError::SerializationError(format!("Claimed sum serialization failed: {:?}", e))
+            })?;
 
         // Serialize round polynomials
-        bytes.extend_from_slice(&(self.sumcheck_proof.round_polynomials.len() as u32).to_le_bytes());
+        bytes
+            .extend_from_slice(&(self.sumcheck_proof.round_polynomials.len() as u32).to_le_bytes());
         for poly in &self.sumcheck_proof.round_polynomials {
             bytes.extend_from_slice(&(poly.coefficients.len() as u32).to_le_bytes());
             for coeff in &poly.coefficients {
-                coeff.serialize_compressed(&mut bytes)
-                    .map_err(|e| GkrError::SerializationError(format!("Coefficient serialization failed: {:?}", e)))?;
+                coeff.serialize_compressed(&mut bytes).map_err(|e| {
+                    GkrError::SerializationError(format!(
+                        "Coefficient serialization failed: {:?}",
+                        e
+                    ))
+                })?;
             }
         }
 
         // Serialize challenges
         bytes.extend_from_slice(&(self.sumcheck_proof.challenges.len() as u32).to_le_bytes());
         for challenge in &self.sumcheck_proof.challenges {
-            challenge.serialize_compressed(&mut bytes)
-                .map_err(|e| GkrError::SerializationError(format!("Challenge serialization failed: {:?}", e)))?;
+            challenge.serialize_compressed(&mut bytes).map_err(|e| {
+                GkrError::SerializationError(format!("Challenge serialization failed: {:?}", e))
+            })?;
         }
 
         // Serialize final point
         bytes.extend_from_slice(&(self.sumcheck_proof.final_point.len() as u32).to_le_bytes());
         for coord in &self.sumcheck_proof.final_point {
-            coord.serialize_compressed(&mut bytes)
-                .map_err(|e| GkrError::SerializationError(format!("Final point serialization failed: {:?}", e)))?;
+            coord.serialize_compressed(&mut bytes).map_err(|e| {
+                GkrError::SerializationError(format!("Final point serialization failed: {:?}", e))
+            })?;
         }
 
         // Serialize MLE opening values (simplified)
-        self.sumcheck_proof.w_opening.value.serialize_compressed(&mut bytes)
-            .map_err(|e| GkrError::SerializationError(format!("W opening value serialization failed: {:?}", e)))?;
+        self.sumcheck_proof
+            .w_opening
+            .value
+            .serialize_compressed(&mut bytes)
+            .map_err(|e| {
+                GkrError::SerializationError(format!(
+                    "W opening value serialization failed: {:?}",
+                    e
+                ))
+            })?;
 
-        self.sumcheck_proof.x_opening.value.serialize_compressed(&mut bytes)
-            .map_err(|e| GkrError::SerializationError(format!("X opening value serialization failed: {:?}", e)))?;
+        self.sumcheck_proof
+            .x_opening
+            .value
+            .serialize_compressed(&mut bytes)
+            .map_err(|e| {
+                GkrError::SerializationError(format!(
+                    "X opening value serialization failed: {:?}",
+                    e
+                ))
+            })?;
 
         Ok(bytes)
     }
@@ -270,34 +347,52 @@ impl GkrProof {
     /// Deserialize sum-check proof from binary format
     fn deserialize_sumcheck_proof(data: &[u8]) -> Result<SumCheckProof> {
         use crate::sumcheck::{SumCheckProof, UnivariatePolynomial};
-        use crate::mle::MleOpenProof;
 
         let mut cursor = 0;
 
         // Deserialize claimed sum
-        let claimed_sum = Fr::deserialize_compressed(&data[cursor..])
-            .map_err(|e| GkrError::SerializationError(format!("Claimed sum deserialization failed: {:?}", e)))?;
+        let claimed_sum = Fr::deserialize_compressed(&data[cursor..]).map_err(|e| {
+            GkrError::SerializationError(format!("Claimed sum deserialization failed: {:?}", e))
+        })?;
         cursor += claimed_sum.serialized_size(ark_serialize::Compress::Yes);
 
         // Deserialize round polynomials
         if data.len() < cursor + 4 {
-            return Err(GkrError::SerializationError("Insufficient data for polynomial count".to_string()));
+            return Err(GkrError::SerializationError(
+                "Insufficient data for polynomial count".to_string(),
+            ));
         }
-        let poly_count = u32::from_le_bytes([data[cursor], data[cursor+1], data[cursor+2], data[cursor+3]]) as usize;
+        let poly_count = u32::from_le_bytes([
+            data[cursor],
+            data[cursor + 1],
+            data[cursor + 2],
+            data[cursor + 3],
+        ]) as usize;
         cursor += 4;
 
         let mut round_polynomials = Vec::with_capacity(poly_count);
         for _ in 0..poly_count {
             if data.len() < cursor + 4 {
-                return Err(GkrError::SerializationError("Insufficient data for coefficient count".to_string()));
+                return Err(GkrError::SerializationError(
+                    "Insufficient data for coefficient count".to_string(),
+                ));
             }
-            let coeff_count = u32::from_le_bytes([data[cursor], data[cursor+1], data[cursor+2], data[cursor+3]]) as usize;
+            let coeff_count = u32::from_le_bytes([
+                data[cursor],
+                data[cursor + 1],
+                data[cursor + 2],
+                data[cursor + 3],
+            ]) as usize;
             cursor += 4;
 
             let mut coefficients = Vec::with_capacity(coeff_count);
             for _ in 0..coeff_count {
-                let coeff = Fr::deserialize_compressed(&data[cursor..])
-                    .map_err(|e| GkrError::SerializationError(format!("Coefficient deserialization failed: {:?}", e)))?;
+                let coeff = Fr::deserialize_compressed(&data[cursor..]).map_err(|e| {
+                    GkrError::SerializationError(format!(
+                        "Coefficient deserialization failed: {:?}",
+                        e
+                    ))
+                })?;
                 cursor += coeff.serialized_size(ark_serialize::Compress::Yes);
                 coefficients.push(coeff);
             }
@@ -306,41 +401,62 @@ impl GkrProof {
 
         // Deserialize challenges
         if data.len() < cursor + 4 {
-            return Err(GkrError::SerializationError("Insufficient data for challenge count".to_string()));
+            return Err(GkrError::SerializationError(
+                "Insufficient data for challenge count".to_string(),
+            ));
         }
-        let challenge_count = u32::from_le_bytes([data[cursor], data[cursor+1], data[cursor+2], data[cursor+3]]) as usize;
+        let challenge_count = u32::from_le_bytes([
+            data[cursor],
+            data[cursor + 1],
+            data[cursor + 2],
+            data[cursor + 3],
+        ]) as usize;
         cursor += 4;
 
         let mut challenges = Vec::with_capacity(challenge_count);
         for _ in 0..challenge_count {
-            let challenge = Fr::deserialize_compressed(&data[cursor..])
-                .map_err(|e| GkrError::SerializationError(format!("Challenge deserialization failed: {:?}", e)))?;
+            let challenge = Fr::deserialize_compressed(&data[cursor..]).map_err(|e| {
+                GkrError::SerializationError(format!("Challenge deserialization failed: {:?}", e))
+            })?;
             cursor += challenge.serialized_size(ark_serialize::Compress::Yes);
             challenges.push(challenge);
         }
 
         // Deserialize final point
         if data.len() < cursor + 4 {
-            return Err(GkrError::SerializationError("Insufficient data for final point count".to_string()));
+            return Err(GkrError::SerializationError(
+                "Insufficient data for final point count".to_string(),
+            ));
         }
-        let point_count = u32::from_le_bytes([data[cursor], data[cursor+1], data[cursor+2], data[cursor+3]]) as usize;
+        let point_count = u32::from_le_bytes([
+            data[cursor],
+            data[cursor + 1],
+            data[cursor + 2],
+            data[cursor + 3],
+        ]) as usize;
         cursor += 4;
 
         let mut final_point = Vec::with_capacity(point_count);
         for _ in 0..point_count {
-            let coord = Fr::deserialize_compressed(&data[cursor..])
-                .map_err(|e| GkrError::SerializationError(format!("Final point coordinate deserialization failed: {:?}", e)))?;
+            let coord = Fr::deserialize_compressed(&data[cursor..]).map_err(|e| {
+                GkrError::SerializationError(format!(
+                    "Final point coordinate deserialization failed: {:?}",
+                    e
+                ))
+            })?;
             cursor += coord.serialized_size(ark_serialize::Compress::Yes);
             final_point.push(coord);
         }
 
         // Deserialize MLE opening values
-        let w_value = Fr::deserialize_compressed(&data[cursor..])
-            .map_err(|e| GkrError::SerializationError(format!("W opening value deserialization failed: {:?}", e)))?;
+        let w_value = Fr::deserialize_compressed(&data[cursor..]).map_err(|e| {
+            GkrError::SerializationError(format!("W opening value deserialization failed: {:?}", e))
+        })?;
         cursor += w_value.serialized_size(ark_serialize::Compress::Yes);
 
-        let x_value = Fr::deserialize_compressed(&data[cursor..])
-            .map_err(|e| GkrError::SerializationError(format!("X opening value deserialization failed: {:?}", e)))?;
+        let x_value = Fr::deserialize_compressed(&data[cursor..]).map_err(|e| {
+            GkrError::SerializationError(format!("X opening value deserialization failed: {:?}", e))
+        })?;
         cursor += x_value.serialized_size(ark_serialize::Compress::Yes);
 
         let w_opening = crate::mle::MleOpenProof {
@@ -375,7 +491,6 @@ impl GkrProof {
             final_point,
         })
     }
-
 }
 
 impl GkrPublicInputs {
@@ -405,43 +520,69 @@ impl GkrPublicInputs {
             "vk_hash": self.vk_hash
         });
 
-        let json = serde_json::to_string_pretty(&json_value)
-            .map_err(|e| GkrError::SerializationError(format!("JSON serialization failed: {}", e)))?;
+        let json = serde_json::to_string_pretty(&json_value).map_err(|e| {
+            GkrError::SerializationError(format!("JSON serialization failed: {}", e))
+        })?;
 
-        std::fs::write(path, json)
-            .map_err(|e| GkrError::SerializationError(format!("Failed to write public inputs file: {}", e)))?;
+        std::fs::write(path, json).map_err(|e| {
+            GkrError::SerializationError(format!("Failed to write public inputs file: {}", e))
+        })?;
 
         Ok(())
     }
 
     /// Load public inputs from JSON file
     pub fn load_from_file(path: &str) -> Result<Self> {
-        let json = std::fs::read_to_string(path)
-            .map_err(|e| GkrError::SerializationError(format!("Failed to read public inputs file: {}", e)))?;
+        let json = std::fs::read_to_string(path).map_err(|e| {
+            GkrError::SerializationError(format!("Failed to read public inputs file: {}", e))
+        })?;
 
         let value: serde_json::Value = serde_json::from_str(&json)
             .map_err(|e| GkrError::SerializationError(format!("JSON parsing failed: {}", e)))?;
 
         // Custom deserialization from hex strings
-        let c_hex = value["c"].as_str().ok_or_else(|| GkrError::SerializationError("Missing c field".to_string()))?;
-        let h_w_hex = value["h_w"].as_str().ok_or_else(|| GkrError::SerializationError("Missing h_w field".to_string()))?;
-        let h_x_hex = value["h_x"].as_str().ok_or_else(|| GkrError::SerializationError("Missing h_x field".to_string()))?;
+        let c_hex = value["c"]
+            .as_str()
+            .ok_or_else(|| GkrError::SerializationError("Missing c field".to_string()))?;
+        let h_w_hex = value["h_w"]
+            .as_str()
+            .ok_or_else(|| GkrError::SerializationError("Missing h_w field".to_string()))?;
+        let h_x_hex = value["h_x"]
+            .as_str()
+            .ok_or_else(|| GkrError::SerializationError("Missing h_x field".to_string()))?;
 
-        let c_bytes = hex::decode(c_hex).map_err(|e| GkrError::SerializationError(format!("Invalid hex for c: {}", e)))?;
-        let h_w_bytes = hex::decode(h_w_hex).map_err(|e| GkrError::SerializationError(format!("Invalid hex for h_w: {}", e)))?;
-        let h_x_bytes = hex::decode(h_x_hex).map_err(|e| GkrError::SerializationError(format!("Invalid hex for h_x: {}", e)))?;
+        let c_bytes = hex::decode(c_hex)
+            .map_err(|e| GkrError::SerializationError(format!("Invalid hex for c: {}", e)))?;
+        let h_w_bytes = hex::decode(h_w_hex)
+            .map_err(|e| GkrError::SerializationError(format!("Invalid hex for h_w: {}", e)))?;
+        let h_x_bytes = hex::decode(h_x_hex)
+            .map_err(|e| GkrError::SerializationError(format!("Invalid hex for h_x: {}", e)))?;
 
-        let c = Fr::deserialize_compressed(&c_bytes[..]).map_err(|e| GkrError::SerializationError(format!("Failed to deserialize c: {}", e)))?;
-        let h_w = Fr::deserialize_compressed(&h_w_bytes[..]).map_err(|e| GkrError::SerializationError(format!("Failed to deserialize h_w: {}", e)))?;
-        let h_x = Fr::deserialize_compressed(&h_x_bytes[..]).map_err(|e| GkrError::SerializationError(format!("Failed to deserialize h_x: {}", e)))?;
+        let c = Fr::deserialize_compressed(&c_bytes[..])
+            .map_err(|e| GkrError::SerializationError(format!("Failed to deserialize c: {}", e)))?;
+        let h_w = Fr::deserialize_compressed(&h_w_bytes[..]).map_err(|e| {
+            GkrError::SerializationError(format!("Failed to deserialize h_w: {}", e))
+        })?;
+        let h_x = Fr::deserialize_compressed(&h_x_bytes[..]).map_err(|e| {
+            GkrError::SerializationError(format!("Failed to deserialize h_x: {}", e))
+        })?;
 
         Ok(Self {
-            m: value["m"].as_u64().ok_or_else(|| GkrError::SerializationError("Missing m field".to_string()))? as usize,
-            k: value["k"].as_u64().ok_or_else(|| GkrError::SerializationError("Missing k field".to_string()))? as usize,
+            m: value["m"]
+                .as_u64()
+                .ok_or_else(|| GkrError::SerializationError("Missing m field".to_string()))?
+                as usize,
+            k: value["k"]
+                .as_u64()
+                .ok_or_else(|| GkrError::SerializationError("Missing k field".to_string()))?
+                as usize,
             c,
             h_w,
             h_x,
-            salt: value["salt"].as_str().ok_or_else(|| GkrError::SerializationError("Missing salt field".to_string()))?.to_string(),
+            salt: value["salt"]
+                .as_str()
+                .ok_or_else(|| GkrError::SerializationError("Missing salt field".to_string()))?
+                .to_string(),
             model_id: value["model_id"].as_str().map(|s| s.to_string()),
             vk_hash: value["vk_hash"].as_str().map(|s| s.to_string()),
         })
@@ -464,14 +605,35 @@ impl GkrPublicInputs {
     /// Create from hex format JSON
     pub fn from_hex_format(value: &serde_json::Value) -> Result<Self> {
         Ok(Self {
-            m: value["m"].as_u64().ok_or_else(|| GkrError::SerializationError("Missing m".to_string()))? as usize,
-            k: value["k"].as_u64().ok_or_else(|| GkrError::SerializationError("Missing k".to_string()))? as usize,
-            h_w: field_from_hex(value["h_w"].as_str().ok_or_else(|| GkrError::SerializationError("Missing h_w".to_string()))?)?,
-            h_x: field_from_hex(value["h_x"].as_str().ok_or_else(|| GkrError::SerializationError("Missing h_x".to_string()))?)?,
-            c: field_from_hex(value["c"].as_str().ok_or_else(|| GkrError::SerializationError("Missing c".to_string()))?)?,
+            m: value["m"]
+                .as_u64()
+                .ok_or_else(|| GkrError::SerializationError("Missing m".to_string()))?
+                as usize,
+            k: value["k"]
+                .as_u64()
+                .ok_or_else(|| GkrError::SerializationError("Missing k".to_string()))?
+                as usize,
+            h_w: field_from_hex(
+                value["h_w"]
+                    .as_str()
+                    .ok_or_else(|| GkrError::SerializationError("Missing h_w".to_string()))?,
+            )?,
+            h_x: field_from_hex(
+                value["h_x"]
+                    .as_str()
+                    .ok_or_else(|| GkrError::SerializationError("Missing h_x".to_string()))?,
+            )?,
+            c: field_from_hex(
+                value["c"]
+                    .as_str()
+                    .ok_or_else(|| GkrError::SerializationError("Missing c".to_string()))?,
+            )?,
             model_id: value["model_id"].as_str().map(|s| s.to_string()),
             vk_hash: value["vk_hash"].as_str().map(|s| s.to_string()),
-            salt: value["salt"].as_str().ok_or_else(|| GkrError::SerializationError("Missing salt".to_string()))?.to_string(),
+            salt: value["salt"]
+                .as_str()
+                .ok_or_else(|| GkrError::SerializationError("Missing salt".to_string()))?
+                .to_string(),
         })
     }
 }
@@ -495,16 +657,16 @@ fn field_from_hex(hex_str: &str) -> Result<Fr> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sumcheck::{SumCheckProof, UnivariatePolynomial};
     use crate::mle::MleOpenProof;
-    use ark_std::test_rng;
+    use crate::sumcheck::{SumCheckProof, UnivariatePolynomial};
 
     fn create_dummy_proof() -> GkrProof {
         let sumcheck_proof = SumCheckProof {
             claimed_sum: Fr::from(42u64),
-            round_polynomials: vec![
-                UnivariatePolynomial::new(vec![Fr::from(1u64), Fr::from(2u64)]),
-            ],
+            round_polynomials: vec![UnivariatePolynomial::new(vec![
+                Fr::from(1u64),
+                Fr::from(2u64),
+            ])],
             challenges: vec![Fr::from(3u64)],
             w_opening: MleOpenProof {
                 value: Fr::from(4u64),

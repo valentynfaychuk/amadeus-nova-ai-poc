@@ -1,8 +1,8 @@
-pub mod transcript;
 pub mod merkle_poseidon;
 pub mod mle;
-pub mod sumcheck;
 pub mod proof;
+pub mod sumcheck;
+pub mod transcript;
 
 pub use ark_bn254::Fr;
 pub use ark_ff::Field;

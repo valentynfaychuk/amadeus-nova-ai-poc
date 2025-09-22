@@ -1,9 +1,8 @@
-use crate::{Fr, Result, GkrError};
-use crate::transcript::FiatShamirTranscript;
 use crate::merkle_poseidon::PoseidonMerkleTree;
-use crate::mle::{MleUtils, MleOpenProof};
-use ark_ff::{Field, Zero, One};
-use serde::{Serialize, Deserialize};
+use crate::mle::{MleOpenProof, MleUtils};
+use crate::transcript::FiatShamirTranscript;
+use crate::{Fr, GkrError, Result};
+use ark_ff::{Field, One, Zero};
 
 /// Univariate polynomial representation (coefficients in ascending degree order)
 #[derive(Debug, Clone)]
@@ -89,21 +88,27 @@ impl SumCheckProver {
         let expected_u_size = 1 << a;
 
         if w_data.len() != expected_w_size {
-            return Err(GkrError::InvalidDimensions(
-                format!("W data size {} doesn't match expected 2^{}", w_data.len(), a + b)
-            ));
+            return Err(GkrError::InvalidDimensions(format!(
+                "W data size {} doesn't match expected 2^{}",
+                w_data.len(),
+                a + b
+            )));
         }
 
         if x_data.len() != expected_x_size {
-            return Err(GkrError::InvalidDimensions(
-                format!("X data size {} doesn't match expected 2^{}", x_data.len(), b)
-            ));
+            return Err(GkrError::InvalidDimensions(format!(
+                "X data size {} doesn't match expected 2^{}",
+                x_data.len(),
+                b
+            )));
         }
 
         if u.len() != expected_u_size {
-            return Err(GkrError::InvalidDimensions(
-                format!("U vector size {} doesn't match expected 2^{}", u.len(), a)
-            ));
+            return Err(GkrError::InvalidDimensions(format!(
+                "U vector size {} doesn't match expected 2^{}",
+                u.len(),
+                a
+            )));
         }
 
         Ok(Self {
@@ -151,7 +156,7 @@ impl SumCheckProver {
         // At this point, we should have a single value
         if current_g_table.len() != 1 {
             return Err(GkrError::SumCheckFailed(
-                "Final g table should have exactly one element".to_string()
+                "Final g table should have exactly one element".to_string(),
             ));
         }
 
@@ -161,12 +166,8 @@ impl SumCheckProver {
         let w_root = self.w_tree.root();
         let x_root = self.x_tree.root();
 
-        let w_opening = MleUtils::prove_mle_opening(
-            &w_root,
-            &self.w_data,
-            &final_point,
-            &self.w_tree,
-        )?;
+        let w_opening =
+            MleUtils::prove_mle_opening(&w_root, &self.w_data, &final_point, &self.w_tree)?;
 
         let x_opening = MleUtils::prove_mle_opening(
             &x_root,
@@ -230,7 +231,11 @@ impl SumCheckProver {
     }
 
     /// Compute the univariate polynomial for a given round
-    fn compute_round_polynomial(&self, g_table: &[Fr], _round: usize) -> Result<UnivariatePolynomial> {
+    fn compute_round_polynomial(
+        &self,
+        g_table: &[Fr],
+        _round: usize,
+    ) -> Result<UnivariatePolynomial> {
         let current_size = g_table.len();
 
         // We're computing sum over the first variable, treating it as X
@@ -261,10 +266,10 @@ impl SumCheckProver {
         let poly = Self::lagrange_interpolate(&evaluations);
 
         // Verify our polynomial
-        let test_0 = poly.evaluate(&Fr::zero());
-        let test_1 = poly.evaluate(&Fr::one());
+        let _test_0 = poly.evaluate(&Fr::zero());
+        let _test_1 = poly.evaluate(&Fr::one());
         // eprintln!("DEBUG PROVER: Polynomial check: G(0) = {:#?}, G(1) = {:#?}, sum = {:#?}",
-        //          test_0, test_1, test_0 + test_1);
+        //          _test_0, _test_1, _test_0 + _test_1);
 
         Ok(poly)
     }
@@ -287,34 +292,34 @@ impl SumCheckProver {
 
         // L0(x) = -(x^3 - 6x^2 + 11x - 6)/6 = -(1/6)x^3 + x^2 - (11/6)x + 1
         let l0_coeffs = [
-            Fr::one(),                                              // constant
-            -Fr::from(11u64) * Fr::from(6u64).inverse().unwrap(),  // x
-            Fr::one(),                                              // x^2
-            -Fr::from(6u64).inverse().unwrap(),                     // x^3
+            Fr::one(),                                            // constant
+            -Fr::from(11u64) * Fr::from(6u64).inverse().unwrap(), // x
+            Fr::one(),                                            // x^2
+            -Fr::from(6u64).inverse().unwrap(),                   // x^3
         ];
 
         // L1(x) = (x^3 - 5x^2 + 6x)/2 = (1/2)x^3 - (5/2)x^2 + 3x
         let l1_coeffs = [
-            Fr::zero(),                                            // constant
-            Fr::from(3u64),                                        // x
-            -Fr::from(5u64) * Fr::from(2u64).inverse().unwrap(),  // x^2
-            Fr::from(2u64).inverse().unwrap(),                     // x^3
+            Fr::zero(),                                          // constant
+            Fr::from(3u64),                                      // x
+            -Fr::from(5u64) * Fr::from(2u64).inverse().unwrap(), // x^2
+            Fr::from(2u64).inverse().unwrap(),                   // x^3
         ];
 
         // L2(x) = -(x^3 - 4x^2 + 3x)/2 = -(1/2)x^3 + 2x^2 - (3/2)x
         let l2_coeffs = [
-            Fr::zero(),                                            // constant
-            -Fr::from(3u64) * Fr::from(2u64).inverse().unwrap(),  // x
-            Fr::from(2u64),                                        // x^2
-            -Fr::from(2u64).inverse().unwrap(),                    // x^3
+            Fr::zero(),                                          // constant
+            -Fr::from(3u64) * Fr::from(2u64).inverse().unwrap(), // x
+            Fr::from(2u64),                                      // x^2
+            -Fr::from(2u64).inverse().unwrap(),                  // x^3
         ];
 
         // L3(x) = (x^3 - 3x^2 + 2x)/6 = (1/6)x^3 - (1/2)x^2 + (1/3)x
         let l3_coeffs = [
-            Fr::zero(),                                            // constant
-            Fr::from(3u64).inverse().unwrap(),                     // x
-            -Fr::from(2u64).inverse().unwrap(),                    // x^2
-            Fr::from(6u64).inverse().unwrap(),                     // x^3
+            Fr::zero(),                         // constant
+            Fr::from(3u64).inverse().unwrap(),  // x
+            -Fr::from(2u64).inverse().unwrap(), // x^2
+            Fr::from(6u64).inverse().unwrap(),  // x^3
         ];
 
         // Combine: P(x) = y0*L0(x) + y1*L1(x) + y2*L2(x) + y3*L3(x)
@@ -329,7 +334,7 @@ impl SumCheckProver {
     }
 
     /// Fix a variable in the g table to a specific value
-    fn fix_variable(&self, g_table: &[Fr], challenge: &Fr, round: usize) -> Result<Vec<Fr>> {
+    fn fix_variable(&self, g_table: &[Fr], challenge: &Fr, _round: usize) -> Result<Vec<Fr>> {
         let current_size = g_table.len();
         let mut next_g_table = Vec::with_capacity(current_size / 2);
 
@@ -416,7 +421,7 @@ impl SumCheckVerifier {
         let u_at_r = MleUtils::evaluate_mle_direct(u, &final_point[0..a])?;
 
         // Recompute g(r) = U(r[0..a]) * W(r) * X(r[a..])
-        let expected_final_value = u_at_r * proof.w_opening.value * proof.x_opening.value;
+        let _expected_final_value = u_at_r * proof.w_opening.value * proof.x_opening.value;
 
         // For now, skip this final check since we're not fully implementing MLE openings
         // TODO: Implement proper MLE verification
@@ -432,7 +437,6 @@ impl SumCheckVerifier {
 mod tests {
     use super::*;
     use crate::mle::MleUtils;
-    use ark_std::test_rng;
 
     #[test]
     fn test_univariate_polynomial() {
@@ -485,7 +489,8 @@ mod tests {
             b,
             w_tree,
             x_tree,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Expected sum: u^T * (W * x)
         // W * x = [1*5 + 2*6, 3*5 + 4*6] = [17, 39]

@@ -12,9 +12,7 @@ fn test_minimal_division_logic() {
     let remainder_val = Fr::from(1u64);
 
     // Test Boolean conversion
-    let remainder_bit = Boolean::new_witness(cs.clone(), || {
-        Ok(!remainder_val.is_zero())
-    }).unwrap();
+    let remainder_bit = Boolean::new_witness(cs.clone(), || Ok(!remainder_val.is_zero())).unwrap();
     let remainder = FpVar::<Fr>::from(remainder_bit);
 
     // Test constraint: numed = 2 * quotient + remainder
@@ -24,7 +22,10 @@ fn test_minimal_division_logic() {
     match result {
         Ok(_) => {
             let satisfied = cs.is_satisfied().unwrap();
-            println!("Division constraint test: {}", if satisfied { "✅ PASS" } else { "❌ FAIL" });
+            println!(
+                "Division constraint test: {}",
+                if satisfied { "✅ PASS" } else { "❌ FAIL" }
+            );
             assert!(satisfied, "Division constraint should be satisfied");
         }
         Err(e) => {
@@ -39,7 +40,10 @@ fn test_commitment_computation() {
     let cs = ConstraintSystem::<Fr>::new_ref();
 
     // Simple 2x2 matrix for testing
-    let matrix = [[Fr::from(1u64), Fr::from(2u64)], [Fr::from(3u64), Fr::from(4u64)]];
+    let matrix = [
+        [Fr::from(1u64), Fr::from(2u64)],
+        [Fr::from(3u64), Fr::from(4u64)],
+    ];
 
     // Compute commitment: h = Σ matrix[i][j] * α^(i*2+j)
     let alpha = Fr::from(5u64);
@@ -83,7 +87,10 @@ fn test_commitment_computation() {
     match result {
         Ok(_) => {
             let satisfied = cs.is_satisfied().unwrap();
-            println!("Commitment test: {}", if satisfied { "✅ PASS" } else { "❌ FAIL" });
+            println!(
+                "Commitment test: {}",
+                if satisfied { "✅ PASS" } else { "❌ FAIL" }
+            );
             println!("Expected: {}", expected);
             assert!(satisfied, "Commitment constraint should be satisfied");
         }

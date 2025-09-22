@@ -1,7 +1,7 @@
-use crate::{Fr, Result, GkrError};
-use ark_ff::{Zero, PrimeField};
+use crate::{Fr, GkrError, Result};
+use ark_ff::{PrimeField, Zero};
 use ark_serialize::CanonicalSerialize;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 /// SHA256-based binary Merkle tree
 #[derive(Debug, Clone)]
@@ -80,7 +80,10 @@ impl PoseidonMerkleTree {
     /// Get a leaf value by index
     pub fn get_leaf(&self, index: usize) -> Result<Fr> {
         if index >= self.leaf_count {
-            return Err(GkrError::InvalidDimensions(format!("Leaf index {} out of bounds", index)));
+            return Err(GkrError::InvalidDimensions(format!(
+                "Leaf index {} out of bounds",
+                index
+            )));
         }
         Ok(self.nodes[0][index])
     }
@@ -88,7 +91,10 @@ impl PoseidonMerkleTree {
     /// Generate a Merkle path for the given leaf index
     pub fn open(&self, leaf_index: usize) -> Result<MerklePath> {
         if leaf_index >= self.leaf_count {
-            return Err(GkrError::InvalidDimensions(format!("Leaf index {} out of bounds", leaf_index)));
+            return Err(GkrError::InvalidDimensions(format!(
+                "Leaf index {} out of bounds",
+                leaf_index
+            )));
         }
 
         let mut siblings = Vec::new();
@@ -161,12 +167,14 @@ impl PoseidonMerkleTree {
 
         // Serialize both field elements
         let mut left_bytes = Vec::new();
-        left.serialize_compressed(&mut left_bytes)
-            .map_err(|e| GkrError::SerializationError(format!("Left serialization failed: {:?}", e)))?;
+        left.serialize_compressed(&mut left_bytes).map_err(|e| {
+            GkrError::SerializationError(format!("Left serialization failed: {:?}", e))
+        })?;
 
         let mut right_bytes = Vec::new();
-        right.serialize_compressed(&mut right_bytes)
-            .map_err(|e| GkrError::SerializationError(format!("Right serialization failed: {:?}", e)))?;
+        right.serialize_compressed(&mut right_bytes).map_err(|e| {
+            GkrError::SerializationError(format!("Right serialization failed: {:?}", e))
+        })?;
 
         // Hash the concatenated bytes
         hasher.update(&left_bytes);

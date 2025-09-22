@@ -124,7 +124,10 @@ fn test_circuit_constraint_debug() {
     match result {
         Ok(_) => {
             let satisfied = cs.is_satisfied().unwrap();
-            println!("Num variables: {}", cs.num_witness_variables() + cs.num_instance_variables());
+            println!(
+                "Num variables: {}",
+                cs.num_witness_variables() + cs.num_instance_variables()
+            );
             println!("Num constraints: {}", cs.num_constraints());
 
             if satisfied {

@@ -12,6 +12,7 @@ circuit = { path = "../circuit" }
 engine = { path = "../engine" }
 zk_gkr = { path = "../zk_gkr" }
 ark-bn254 = "0.4"
+ark-ec = "0.4"
 ark-ff = "0.4"
 ark-groth16 = "0.4"
 ark-serialize = "0.4"

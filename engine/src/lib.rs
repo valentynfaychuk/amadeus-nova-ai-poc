@@ -5,8 +5,8 @@ use ark_bn254::Fr;
 use thiserror::Error;
 
 pub mod commitment;
-pub mod gemv;
 pub mod freivalds;
+pub mod gemv;
 
 #[derive(Error, Debug)]
 pub enum EngineError {

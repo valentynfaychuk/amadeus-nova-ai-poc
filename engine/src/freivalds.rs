@@ -1,12 +1,12 @@
-use ark_bn254::Fr;
-use ark_groth16::VerifyingKey;
+use crate::{i64_to_field, EngineError, EngineResult};
 use ark_bn254::Bn254;
+use ark_bn254::Fr;
+use ark_ff::{Field, Zero};
+use ark_groth16::VerifyingKey;
 use ark_serialize::CanonicalSerialize;
-use ark_ff::{Zero, Field};
-use std::io::{Read, Seek, SeekFrom};
 use byteorder::{LittleEndian, ReadBytesExt};
-use sha2::{Sha256, Digest};
-use crate::{EngineResult, EngineError, i64_to_field};
+use sha2::{Digest, Sha256};
+use std::io::{Read, Seek, SeekFrom};
 
 /// Compute VK hash for transcript binding
 pub fn vk_hash(vk: &VerifyingKey<Bn254>) -> [u8; 32] {
@@ -360,8 +360,8 @@ fn compute_w1_transpose_times_r<R: Read>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
     use byteorder::WriteBytesExt;
+    use std::io::Cursor;
 
     #[test]
     fn test_freivalds_correct_computation() {
@@ -413,7 +413,9 @@ mod tests {
         // Create identity-like matrix
         for i in 0..16 {
             for _j in 0..k {
-                w1_data.write_i16::<LittleEndian>(if i < k { 1 } else { 0 }).unwrap();
+                w1_data
+                    .write_i16::<LittleEndian>(if i < k { 1 } else { 0 })
+                    .unwrap();
             }
         }
 

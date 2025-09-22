@@ -20,13 +20,18 @@ fn main() {
 
     // Create constraint system and generate constraints
     let cs = ConstraintSystem::<Fr>::new_ref();
-    circuit.generate_constraints(cs.clone()).expect("Failed to generate constraints");
+    circuit
+        .generate_constraints(cs.clone())
+        .expect("Failed to generate constraints");
 
     // Print constraint statistics
     println!("=== Tiny Tail Circuit Complexity Analysis ===");
     println!("Matrix dimensions: 16x16 tail layer only");
     println!("Total constraints: {}", cs.num_constraints());
-    println!("Number of variables: {}", cs.num_instance_variables() + cs.num_witness_variables());
+    println!(
+        "Number of variables: {}",
+        cs.num_instance_variables() + cs.num_witness_variables()
+    );
     println!("Public inputs: {}", cs.num_instance_variables() - 1); // -1 for the constant ONE variable
     println!("Private witnesses: {}", cs.num_witness_variables());
 
@@ -51,7 +56,13 @@ fn main() {
     println!("Division verification: {}", division_constraints);
     println!("Commitment verification: {}", commitment_constraints);
     println!("Range checking: {}", range_check_constraints);
-    println!("Total estimated: {}", matrix_mult_constraints + division_constraints + commitment_constraints + range_check_constraints);
+    println!(
+        "Total estimated: {}",
+        matrix_mult_constraints
+            + division_constraints
+            + commitment_constraints
+            + range_check_constraints
+    );
 
     println!("\n=== Tiny Groth16 Benefits ===");
     println!("• Proof size: ~200-300 bytes (compressed)");

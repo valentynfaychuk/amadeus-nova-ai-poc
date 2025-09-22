@@ -1,15 +1,15 @@
 use crate::cli::{ProveArgs, SetupArgs};
 use crate::formats::*;
-use circuit::{TinyTailCircuit, compressed};
 use ark_bn254::{Bn254, Fr};
+use circuit::{compressed, TinyTailCircuit};
 // use ark_ff::{Field, PrimeField};
+use anyhow::Result;
 use ark_groth16::{Groth16, ProvingKey};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use rand::rngs::OsRng;
 use std::fs::File;
-use std::io::{BufWriter, BufReader, Write};
-use anyhow::Result;
+use std::io::{BufReader, BufWriter, Write};
 
 pub fn run_setup(args: SetupArgs) -> Result<()> {
     let pk_path = args.out_dir.join("pk.bin");
@@ -121,13 +121,19 @@ pub fn run_prove(args: ProveArgs) -> Result<()> {
     save_public_inputs(&inputs_path, &public_inputs)?;
 
     // Copy verification key to output directory for convenience
-    let vk_src = pk_path.parent().unwrap_or_else(|| std::path::Path::new(".")).join("vk.bin");
+    let vk_src = pk_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("vk.bin");
     let vk_dst = args.out_dir.join("vk.bin");
     if vk_src.exists() {
         std::fs::copy(&vk_src, &vk_dst)?;
     }
 
-    println!("✅ Proof generation completed in {:.2}s", prove_time.as_secs_f64());
+    println!(
+        "✅ Proof generation completed in {:.2}s",
+        prove_time.as_secs_f64()
+    );
     println!("📁 Proof files saved to:");
     println!("   • Proof:        {}", proof_path.display());
     println!("   • Public inputs: {}", inputs_path.display());
@@ -150,7 +156,10 @@ pub fn run_prove(args: ProveArgs) -> Result<()> {
         }
     }
 
-    println!("🚀 Ready for verification with: nova_poc verify {}", args.run_json.display());
+    println!(
+        "🚀 Ready for verification with: nova_poc verify {}",
+        args.run_json.display()
+    );
 
     Ok(())
 }
@@ -188,21 +197,29 @@ fn build_circuit_from_run_data(run_data: &RunData) -> Result<TinyTailCircuit> {
     }
 
     // Convert vectors to field elements
-    let y1: Vec<Fr> = run_data.y1.iter().map(|&x| {
-        if x >= 0 {
-            Fr::from(x as u64)
-        } else {
-            -Fr::from((-x) as u64)
-        }
-    }).collect();
+    let y1: Vec<Fr> = run_data
+        .y1
+        .iter()
+        .map(|&x| {
+            if x >= 0 {
+                Fr::from(x as u64)
+            } else {
+                -Fr::from((-x) as u64)
+            }
+        })
+        .collect();
 
-    let y2: Vec<Fr> = run_data.y2.iter().map(|&x| {
-        if x >= 0 {
-            Fr::from(x as u64)
-        } else {
-            -Fr::from((-x) as u64)
-        }
-    }).collect();
+    let y2: Vec<Fr> = run_data
+        .y2
+        .iter()
+        .map(|&x| {
+            if x >= 0 {
+                Fr::from(x as u64)
+            } else {
+                -Fr::from((-x) as u64)
+            }
+        })
+        .collect();
 
     // Compute division witnesses for floor operation
     let scale_num = Fr::from(run_data.config.scale_num);
@@ -236,8 +253,12 @@ fn build_circuit_from_run_data(run_data: &RunData) -> Result<TinyTailCircuit> {
 
     let circuit = TinyTailCircuit {
         w2,
-        y1: y1.try_into().map_err(|_| anyhow::anyhow!("y1 length != 16"))?,
-        y2: y2.try_into().map_err(|_| anyhow::anyhow!("y2 length != 16"))?,
+        y1: y1
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("y1 length != 16"))?,
+        y2: y2
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("y2 length != 16"))?,
         scale_num,
         h_w2,
         h_x,
@@ -267,6 +288,7 @@ fn build_public_inputs(run_data: &RunData) -> Result<Vec<Fr>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ark_ec::AffineRepr;
     use tempfile::TempDir;
 
     #[test]
@@ -304,6 +326,7 @@ mod tests {
         let vk_file = File::open(temp_dir.path().join("vk.bin")).unwrap();
         let mut vk_reader = BufReader::new(vk_file);
         let _vk = compressed::deserialize_vk_compressed(&mut vk_reader)
-            .map_err(|e| anyhow::anyhow!("Failed to deserialize verification key: {}", e)).unwrap();
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize verification key: {}", e))
+            .unwrap();
     }
 }
