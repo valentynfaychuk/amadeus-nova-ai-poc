@@ -1,6 +1,10 @@
 # Scripts Documentation
 
-This directory contains tools for benchmarking, performance analysis, and security testing of the Nova AI GKR implementation.
+This directory contains tools for benchmarking, performance analysis, and security testing of the Nova AI GKR implementation:
+
+- `gkr_attack_suite.sh` - Comprehensive security testing suite
+- `gkr_stress_test.sh` - Extended testing under more stress
+- `benchmark.py` - Automated benchmarking with CSV & PNG output
 
 ## Setup
 
@@ -26,9 +30,6 @@ python3 scripts/benchmark.py --sizes 4096,8192,16384,32768 --repeats 3
 
 # Large-scale production benchmark (generates production_bench.csv and production_bench.png)
 python3 scripts/benchmark.py --sizes 4096,8192,16384,32768,50204 --repeats 5 --output production_bench
-
-# Custom output path (generates data/my_benchmark.csv and data/my_benchmark.png)
-python3 scripts/benchmark.py --sizes 4096,8192,16384 --repeats 3 --output data/my_benchmark
 ```
 
 **Features:**

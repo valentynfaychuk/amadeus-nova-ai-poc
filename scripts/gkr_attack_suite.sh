@@ -80,9 +80,45 @@ echo "but evaluate to incorrect values at challenge points."
 # Generate legitimate baseline for comparison
 echo "Generating legitimate baseline proof..."
 BASELINE_DIR="proofs/baseline"
-../target/release/nova_poc prove --m 16 --k 1024 --seed 42 --output "$BASELINE_DIR" > /dev/null 2>&1
+mkdir -p "$BASELINE_DIR"
 
-if [ ! -f "$BASELINE_DIR/gkr_proof.bin" ]; then
+# Create test data files for proving
+echo "Creating test input files..."
+cat > create_baseline_data.py << 'EOF'
+import numpy as np
+import json
+
+# Create 16x1024 weight matrix (i16 values)
+np.random.seed(42)
+W = np.random.randint(-1000, 1000, (16, 1024), dtype=np.int16)
+
+# Create input vector (1024 elements)
+x = np.random.randint(0, 100, 1024, dtype=np.int16)
+
+# Save weight matrix as binary file (row-major order)
+with open('data/baseline_weights.bin', 'wb') as f:
+    f.write(W.tobytes())
+
+# Save input vector as JSON file (as expected by nova_poc)
+with open('data/baseline_input.json', 'w') as f:
+    json.dump(x.tolist(), f)
+
+print(f"Created baseline test data: W{W.shape}, x{x.shape}")
+EOF
+
+python3 create_baseline_data.py
+
+# Generate proof using the binary files
+echo "Generating proof using created test data..."
+../target/release/nova_poc prove \
+    --weights1-path data/baseline_weights.bin \
+    --x0-path data/baseline_input.json \
+    --m 16 --k 1024 \
+    --out-dir "$BASELINE_DIR"
+
+if [ -f "$BASELINE_DIR/gkr_proof.bin" ] && [ -f "$BASELINE_DIR/public.json" ]; then
+    echo "Baseline proof generated successfully"
+else
     echo "Failed to generate baseline proof"
     exit 1
 fi
@@ -91,7 +127,7 @@ PROOF_SIZE=$(stat -f%z "$BASELINE_DIR/gkr_proof.bin" 2>/dev/null || stat -c%s "$
 echo "Baseline generated: $PROOF_SIZE bytes"
 
 # Create sophisticated polynomial forgery attack
-cat > attack_workspace/tools/polynomial_forgery.py << 'EOF'
+cat > tools/polynomial_forgery.py << 'EOF'
 #!/usr/bin/env python3
 """
 Advanced Sum-Check Polynomial Forgery Attack
@@ -350,7 +386,7 @@ echo ""
 echo "This attack attempts to find different weight matrices that produce the same"
 echo "Merkle commitment, allowing substitution of malicious weights."
 
-cat > attack_workspace/tools/commitment_attack.py << 'EOF'
+cat > tools/commitment_attack.py << 'EOF'
 #!/usr/bin/env python3
 """
 Advanced Commitment Binding Attack
@@ -567,7 +603,7 @@ echo ""
 echo "This attack attempts to manipulate the Fiat-Shamir transcript to predict"
 echo "or influence challenge generation, potentially allowing proof forgery."
 
-cat > attack_workspace/tools/transcript_attack.py << 'EOF'
+cat > tools/transcript_attack.py << 'EOF'
 #!/usr/bin/env python3
 """
 Advanced Transcript Manipulation Attack
@@ -749,7 +785,7 @@ if __name__ == "__main__":
     generate_transcript_attack()
 EOF
 
-python3 attack_workspace/tools/transcript_attack.py
+python3 tools/transcript_attack.py
 
 echo ""
 echo "🚨 Testing transcript manipulation resistance..."
@@ -758,24 +794,24 @@ echo "🚨 Testing transcript manipulation resistance..."
 echo "🔍 Testing challenge predictability..."
 
 if ./target/release/nova_poc prove \
-    --weights1-path attack_workspace/data/attack_original_matrix.bin \
-    --x0-path attack_workspace/data/attack_input.json \
+    --weights1-path data/attack_original_matrix.bin \
+    --x0-path data/attack_input.json \
     --m 16 --k 1024 --salt "predictable_salt" \
-    --out-dir attack_workspace/proofs/predictable > /dev/null 2>&1; then
+    --out-dir proofs/predictable > /dev/null 2>&1; then
 
     echo "✅ Proof generated with predictable salt"
 
     # Check if the same salt produces same challenges (transcript determinism test)
     if ./target/release/nova_poc prove \
-        --weights1-path attack_workspace/data/attack_original_matrix.bin \
-        --x0-path attack_workspace/data/attack_input.json \
+        --weights1-path data/attack_original_matrix.bin \
+        --x0-path data/attack_input.json \
         --m 16 --k 1024 --salt "predictable_salt" \
-        --out-dir attack_workspace/proofs/predictable2 > /dev/null 2>&1; then
+        --out-dir proofs/predictable2 > /dev/null 2>&1; then
 
         echo "✅ Second proof with same salt generated"
 
         # Compare the proofs (they should be identical if deterministic)
-        if cmp -s attack_workspace/proofs/predictable/gkr_proof.bin attack_workspace/proofs/predictable2/gkr_proof.bin; then
+        if cmp -s proofs/predictable/gkr_proof.bin proofs/predictable2/gkr_proof.bin; then
             echo -e "${YELLOW}⚠️  Deterministic proof generation detected (same salt → same proof)${NC}"
             echo "   This could allow prediction attacks if challenges are deterministic"
         else
@@ -792,7 +828,7 @@ echo ""
 echo "Since MLE opening verification is disabled, this attack tests if malicious"
 echo "evaluation values can be injected without detection."
 
-cat > attack_workspace/tools/evaluation_attack.py << 'EOF'
+cat > tools/evaluation_attack.py << 'EOF'
 #!/usr/bin/env python3
 """
 Malicious Evaluation Attack
@@ -917,17 +953,17 @@ if __name__ == "__main__":
     generate_evaluation_attack()
 EOF
 
-python3 attack_workspace/tools/evaluation_attack.py
+python3 tools/evaluation_attack.py
 
 echo ""
 echo "🚨 Testing malicious evaluation attack..."
 
-if [ -f "attack_workspace/data/malicious_proof.bin" ] && [ -f "attack_workspace/data/malicious_public.json" ]; then
+if [ -f "data/malicious_proof.bin" ] && [ -f "data/malicious_public.json" ]; then
     echo "🔍 Testing if malicious proof with false evaluations verifies..."
 
     if ./target/release/nova_poc verify \
-        --proof-path attack_workspace/data/malicious_proof.bin \
-        --public-path attack_workspace/data/malicious_public.json > /dev/null 2>&1; then
+        --proof-path data/malicious_proof.bin \
+        --public-path data/malicious_public.json > /dev/null 2>&1; then
 
         attack_result 0 "Malicious evaluation attack succeeded - false evaluations accepted!"
     else
@@ -949,28 +985,28 @@ echo "🔧 Generating hybrid attack using components from different proofs..."
 
 # Generate multiple legitimate proofs with different parameters
 ./target/release/nova_poc prove \
-    --weights1-path attack_workspace/data/attack_original_matrix.bin \
-    --x0-path attack_workspace/data/attack_input.json \
+    --weights1-path data/attack_original_matrix.bin \
+    --x0-path data/attack_input.json \
     --m 16 --k 1024 --salt "proof_a" \
-    --out-dir attack_workspace/proofs/component_a > /dev/null 2>&1
+    --out-dir proofs/component_a > /dev/null 2>&1
 
 ./target/release/nova_poc prove \
-    --weights1-path attack_workspace/data/attack_original_matrix.bin \
-    --x0-path attack_workspace/data/attack_input.json \
+    --weights1-path data/attack_original_matrix.bin \
+    --x0-path data/attack_input.json \
     --m 16 --k 1024 --salt "proof_b" \
-    --out-dir attack_workspace/proofs/component_b > /dev/null 2>&1
+    --out-dir proofs/component_b > /dev/null 2>&1
 
 echo "✅ Generated component proofs for hybrid attack"
 
 # Create hybrid proof using proof from A and public inputs from B
 echo "🎭 Creating hybrid proof (proof_A + public_B)..."
-cp attack_workspace/proofs/component_a/gkr_proof.bin attack_workspace/data/hybrid_proof.bin
-cp attack_workspace/proofs/component_b/public.json attack_workspace/data/hybrid_public.json
+cp proofs/component_a/gkr_proof.bin data/hybrid_proof.bin
+cp proofs/component_b/public.json data/hybrid_public.json
 
 echo "🚨 Testing hybrid proof verification..."
 if ./target/release/nova_poc verify \
-    --proof-path attack_workspace/data/hybrid_proof.bin \
-    --public-path attack_workspace/data/hybrid_public.json > /dev/null 2>&1; then
+    --proof-path data/hybrid_proof.bin \
+    --public-path data/hybrid_public.json > /dev/null 2>&1; then
 
     attack_result 0 "Hybrid proof attack succeeded - cross-component binding bypassed!"
 else
@@ -985,7 +1021,7 @@ echo ""
 echo "This attack targets the mathematical foundations of the sum-check protocol"
 echo "by exploiting potential weaknesses in polynomial interpolation and evaluation."
 
-cat > attack_workspace/tools/mathematical_attack.py << 'EOF'
+cat > tools/mathematical_attack.py << 'EOF'
 #!/usr/bin/env python3
 """
 Advanced Mathematical Attack on Sum-Check Protocol
@@ -1193,7 +1229,7 @@ if __name__ == "__main__":
     generate_mathematical_attack()
 EOF
 
-python3 attack_workspace/tools/mathematical_attack.py
+python3 tools/mathematical_attack.py
 
 section "6A" "PERFORMANCE vs SECURITY ANALYSIS"
 
@@ -1250,11 +1286,11 @@ echo "⚔️  Executing final coordinated attack..."
 # a coordinated attack using all discovered techniques?
 
 # Test 1: Malicious proof with manipulated transcript
-if [ -f "attack_workspace/data/malicious_proof.bin" ]; then
+if [ -f "data/malicious_proof.bin" ]; then
     echo "🚨 Testing malicious proof with transcript manipulation..."
 
     if ./target/release/nova_poc verify \
-        --proof-path attack_workspace/data/malicious_proof.bin \
+        --proof-path data/malicious_proof.bin \
         --public-path proof_1024/public.json > /dev/null 2>&1; then
 
         attack_result 0 "CRITICAL: Coordinated attack succeeded!"
@@ -1264,12 +1300,12 @@ if [ -f "attack_workspace/data/malicious_proof.bin" ]; then
 fi
 
 # Test 2: Hybrid proof with malicious components
-if [ -f "attack_workspace/data/hybrid_proof.bin" ]; then
+if [ -f "data/hybrid_proof.bin" ]; then
     echo "🚨 Testing hybrid proof with mathematical exploits..."
 
     if ./target/release/nova_poc verify \
-        --proof-path attack_workspace/data/hybrid_proof.bin \
-        --public-path attack_workspace/data/malicious_public.json > /dev/null 2>&1; then
+        --proof-path data/hybrid_proof.bin \
+        --public-path data/malicious_public.json > /dev/null 2>&1; then
 
         attack_result 0 "CRITICAL: Hybrid mathematical attack succeeded!"
     else

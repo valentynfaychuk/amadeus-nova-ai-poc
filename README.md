@@ -43,23 +43,11 @@ cargo build --release
 
 ## Security
 
-The implementation has undergone comprehensive security analysis including:
-
-- **Mathematical attacks**: Sum-check polynomial forgery, degree bound violations
-- **Cryptographic attacks**: Commitment substitution, transcript manipulation
-- **Binary validation**: Proof corruption, trailing data injection
-- **Field overflow**: Extreme value edge cases
-- **Zero-knowledge**: Information leakage analysis
-
-See [`SECURITY.md`](SECURITY.md) for detailed security analysis.
+See [`ANALYSIS.md`](ANALYSIS.md) for detailed security analysis.
 
 ## Scripts
 
-The [`scripts/`](scripts/) directory contains tools for benchmarking, performance analysis, and security testing:
-
-- `gkr_attack_suite.sh` - Comprehensive security testing suite
-- `gkr_stress_test.py` - Extended testing under more stress
-- `benchmark.py` - Automated benchmarking with CSV & PNG output
+See [`scripts/README.md`](scripts/README.md) for details about scripts.
 
 ## Contributing
 
