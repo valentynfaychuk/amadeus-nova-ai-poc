@@ -165,6 +165,18 @@ impl GkrProof {
 
         let sumcheck_bytes = &data[cursor..cursor + sumcheck_len];
         let sumcheck_proof = Self::deserialize_sumcheck_proof(sumcheck_bytes)?;
+        cursor += sumcheck_len;
+
+        // Security fix: Validate that all bytes in the proof file have been consumed
+        // This prevents trailing data attacks and ensures complete proof integrity
+        if cursor != data.len() {
+            return Err(GkrError::SerializationError(format!(
+                "Proof file contains {} unexpected trailing bytes (parsed {} of {} total bytes)",
+                data.len() - cursor,
+                cursor,
+                data.len()
+            )));
+        }
 
         Ok(Self {
             m,
@@ -342,6 +354,17 @@ impl GkrProof {
             fold_values: vec![],
             merkle_paths: vec![],
         };
+
+        // Security fix: Validate that all bytes in the proof have been consumed
+        // This prevents trailing data attacks and ensures proof integrity
+        if cursor != data.len() {
+            return Err(GkrError::SerializationError(format!(
+                "Proof contains {} unexpected trailing bytes (parsed {} of {} total bytes)",
+                data.len() - cursor,
+                cursor,
+                data.len()
+            )));
+        }
 
         Ok(SumCheckProof {
             claimed_sum,
