@@ -9,6 +9,7 @@ ark-bn254 = { version = "0.4", features = ["curve"] }
 ark-std = "0.4"
 ark-serialize = "0.4"
 ark-crypto-primitives = { version = "0.4", features = ["crh"] }
+sha2 = "0.10"
 anyhow = "1.0"
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }

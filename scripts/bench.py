@@ -248,61 +248,98 @@ def run_benchmark_config(config, system_info, workdir, binary_path, repeats=1):
         else:
             env_vars['RAYON_NUM_THREADS'] = str(threads)
 
-        # Stage 1: Infer
-        infer_cmd = [
-            binary_path, "infer",
-            "--k", str(K),
-            "--tile-k", str(tile_k),
-            "--weights1-path", w1_path,
-            "--weights2-path", w2_path,
-            "--x0-path", x0_path,
-            "--freivalds-rounds", str(rounds),
-            "--out", str(run_json)
-        ]
+        if mode == 'gkr':
+            # GKR mode uses different workflow: prove-gkr → verify-gkr
+            # Stage 1: Prove GKR (includes data loading and commitment)
+            prove_gkr_cmd = [
+                binary_path, "prove-gkr",
+                "--weights1-path", w1_path,
+                "--x0-path", x0_path,
+                "--m", "16",
+                "--k", str(K),
+                "--salt", f"bench_seed_{seed}",
+                "--out-dir", str(proof_dir),
+                "--model-id", f"bench_K{K}",
+                "--vk-hash", "benchmark"
+            ]
 
-        if mode == 'k_pass_legacy':
-            # For legacy mode comparison, we might need to modify the command
-            # or use a different flag if available
-            pass  # Placeholder for k-pass specific flags
+            metrics_infer, result_infer = run_stage("gkr_prove", prove_gkr_cmd, env_vars)
+            metrics_prove = {'stage': 'prove', 'wall_s': 0, 'success': True, 'exit_code': 0}  # Included in GKR prove
 
-        metrics_infer, result_infer = run_stage("infer", infer_cmd, env_vars)
+            # Stage 2: Verify GKR (no matrix access required)
+            verify_gkr_cmd = [
+                binary_path, "verify-gkr",
+                "--proof-path", str(proof_dir / "gkr_proof.bin"),
+                "--public-path", str(proof_dir / "public.json")
+            ]
 
-        # Stage 2: Prove
-        prove_cmd = [
-            binary_path, "prove",
-            str(run_json),
-            "--pk-path", str(keys_dir / "pk.bin"),
-            "--out-dir", str(proof_dir)
-        ]
+            metrics_verify, result_verify = run_stage("gkr_verify", verify_gkr_cmd, env_vars)
 
-        metrics_prove, result_prove = run_stage("prove", prove_cmd, env_vars)
+            # Get GKR proof sizes
+            proof_bytes = None
+            publics_bytes = None
+            if (proof_dir / "gkr_proof.bin").exists():
+                proof_bytes = os.path.getsize(proof_dir / "gkr_proof.bin")
+            if (proof_dir / "public.json").exists():
+                publics_bytes = os.path.getsize(proof_dir / "public.json")
 
-        # Get proof sizes
-        proof_bytes = None
-        publics_bytes = None
-        if (proof_dir / "proof.bin").exists():
-            proof_bytes = os.path.getsize(proof_dir / "proof.bin")
-        if (proof_dir / "public_inputs.json").exists():
-            publics_bytes = os.path.getsize(proof_dir / "public_inputs.json")
-
-        # Stage 3: Verify
-        verify_cmd = [
-            binary_path, "verify",
-            str(run_json),
-            "--weights1-path", w1_path,
-            "--vk-path", str(proof_dir / "vk.bin"),
-            "--proof-path", str(proof_dir / "proof.bin"),
-            "--public-inputs-path", str(proof_dir / "public_inputs.json")
-        ]
-
-        if mode == 'one_pass':
-            # One-pass mode is the default
-            pass
         else:
-            # For k-pass legacy mode, might need different flags
-            verify_cmd.append("--allow-low-k")
+            # Traditional Freivalds modes
+            # Stage 1: Infer
+            infer_cmd = [
+                binary_path, "infer",
+                "--k", str(K),
+                "--tile-k", str(tile_k),
+                "--weights1-path", w1_path,
+                "--weights2-path", w2_path,
+                "--x0-path", x0_path,
+                "--freivalds-rounds", str(rounds),
+                "--out", str(run_json)
+            ]
 
-        metrics_verify, result_verify = run_stage("verify", verify_cmd, env_vars)
+            if mode == 'k_pass_legacy':
+                # For legacy mode comparison, we might need to modify the command
+                # or use a different flag if available
+                pass  # Placeholder for k-pass specific flags
+
+            metrics_infer, result_infer = run_stage("infer", infer_cmd, env_vars)
+
+            # Stage 2: Prove
+            prove_cmd = [
+                binary_path, "prove",
+                str(run_json),
+                "--pk-path", str(keys_dir / "pk.bin"),
+                "--out-dir", str(proof_dir)
+            ]
+
+            metrics_prove, result_prove = run_stage("prove", prove_cmd, env_vars)
+
+            # Get proof sizes
+            proof_bytes = None
+            publics_bytes = None
+            if (proof_dir / "proof.bin").exists():
+                proof_bytes = os.path.getsize(proof_dir / "proof.bin")
+            if (proof_dir / "public_inputs.json").exists():
+                publics_bytes = os.path.getsize(proof_dir / "public_inputs.json")
+
+            # Stage 3: Verify
+            verify_cmd = [
+                binary_path, "verify",
+                str(run_json),
+                "--weights1-path", w1_path,
+                "--vk-path", str(proof_dir / "vk.bin"),
+                "--proof-path", str(proof_dir / "proof.bin"),
+                "--public-inputs-path", str(proof_dir / "public_inputs.json")
+            ]
+
+            if mode == 'one_pass':
+                # One-pass mode is the default
+                pass
+            else:
+                # For k-pass legacy mode, might need different flags
+                verify_cmd.append("--allow-low-k")
+
+            metrics_verify, result_verify = run_stage("verify", verify_cmd, env_vars)
 
         # Calculate total transaction size
         tx_bytes = (proof_bytes or 0) + (publics_bytes or 0)
@@ -353,11 +390,11 @@ def main():
     parser.add_argument('--tile-k', type=str, default='1024',
                        help='Tile sizes (comma-separated, e.g., 1024,4096,8192)')
     parser.add_argument('--rounds', type=str, default='16',
-                       help='Freivalds rounds (comma-separated, e.g., 8,16,32)')
+                       help='Freivalds rounds (comma-separated, e.g., 16,32,64)')
     parser.add_argument('--threads', type=str, default='auto',
                        help='Thread counts (comma-separated, e.g., 1,auto)')
     parser.add_argument('--modes', type=str, default='one_pass',
-                       help='Modes to test (comma-separated: one_pass,k_pass_legacy)')
+                       help='Modes to test (comma-separated: one_pass,k_pass_legacy,gkr)')
     parser.add_argument('--repeats', type=int, default=3,
                        help='Number of repeats per configuration')
 

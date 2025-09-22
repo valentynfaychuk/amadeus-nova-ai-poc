@@ -1,6 +1,6 @@
 use crate::{Fr, Result, GkrError};
 use crate::merkle_poseidon::{PoseidonMerkleTree, MerklePath};
-use ark_ff::Field;
+use ark_ff::{Field, Zero, One};
 use serde::{Serialize, Deserialize};
 
 /// Proof for opening a multilinear extension at a point

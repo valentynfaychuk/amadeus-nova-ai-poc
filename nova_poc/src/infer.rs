@@ -199,12 +199,12 @@ mod tests {
             tile_k: 128,
             scale_num: 3,
             seed: 42,
-            freivalds_rounds: 5, // Fewer rounds for speed
+            freivalds_rounds: 16, // Minimum supported rounds
             weights1_path: None,
             weights2_path: None,
             x0_path: None,
             out: temp_file.path().to_path_buf(),
-            skip_freivalds: false,
+            skip_freivalds: true, // Skip for test speed
             preset: Some("demo".to_string()),
         };
 

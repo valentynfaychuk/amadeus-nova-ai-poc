@@ -1,34 +1,19 @@
 use crate::{Fr, Result, GkrError, DOMAIN_GKR_V1, DOMAIN_GKR_U, DOMAIN_GKR_ROUND, DOMAIN_GKR_FINAL};
-use ark_ff::{Field, PrimeField};
+use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
-use ark_crypto_primitives::crh::{CRHScheme, TwoToOneCRHScheme};
-use ark_crypto_primitives::crh::poseidon::{CRH, TwoToOneCRH};
-// use ark_crypto_primitives::crh::poseidon::constraints::{CRHGadget, TwoToOneCRHGadget};
-use ark_bn254::Fq;
-use std::marker::PhantomData;
-
-/// Poseidon hasher for BN254
-pub type PoseidonHasher = CRH<Fq>;
-pub type PoseidonTwoToOneHasher = TwoToOneCRH<Fq>;
+use sha2::{Sha256, Digest};
 
 /// Fiat-Shamir transcript for GKR protocol
 #[derive(Debug, Clone)]
 pub struct FiatShamirTranscript {
     state: Vec<u8>,
-    hasher_params: <PoseidonHasher as CRHScheme>::Parameters,
 }
 
 impl FiatShamirTranscript {
     /// Create a new transcript with initial domain separation
     pub fn new() -> Result<Self> {
-        // Initialize Poseidon parameters for BN254
-        let rng = &mut rand::thread_rng();
-        let hasher_params = PoseidonHasher::setup(rng)
-            .map_err(|e| GkrError::TranscriptError(format!("Failed to setup Poseidon: {:?}", e)))?;
-
         let mut transcript = Self {
             state: Vec::new(),
-            hasher_params,
         };
 
         // Domain separation for GKR protocol
@@ -79,29 +64,18 @@ impl FiatShamirTranscript {
 
     /// Squeeze a field element from the transcript
     pub fn squeeze_fr(&mut self) -> Result<Fr> {
-        // Hash current state to get a deterministic output
-        let hash_input: Vec<Fq> = self.state.chunks(31) // BN254 scalar field is ~254 bits
-            .map(|chunk| {
-                let mut padded = [0u8; 32];
-                padded[..chunk.len()].copy_from_slice(chunk);
-                // Ensure we don't exceed field modulus
-                padded[31] &= 0x1f; // Clear top 3 bits
-                Fq::from_le_bytes_mod_order(&padded)
-            })
-            .collect();
+        // Hash current state using SHA256
+        let mut hasher = Sha256::new();
+        hasher.update(&self.state);
+        let hash_bytes = hasher.finalize();
 
-        let hash_output = PoseidonHasher::evaluate(&self.hasher_params, hash_input)
-            .map_err(|e| GkrError::TranscriptError(format!("Hash evaluation failed: {:?}", e)))?;
+        // Convert hash to field element (take first 31 bytes to stay in field)
+        let mut field_bytes = [0u8; 32];
+        field_bytes[..31].copy_from_slice(&hash_bytes[..31]);
+        // Clear the top bit to ensure we're in the field
+        field_bytes[31] = 0;
 
-        // Convert from Fq to Fr (both are same field for BN254)
-        let fr_bytes = {
-            let mut bytes = Vec::new();
-            hash_output.serialize_compressed(&mut bytes)
-                .map_err(|e| GkrError::TranscriptError(format!("Serialization failed: {:?}", e)))?;
-            bytes
-        };
-
-        let fr_element = Fr::from_le_bytes_mod_order(&fr_bytes);
+        let fr_element = Fr::from_le_bytes_mod_order(&field_bytes);
 
         // Update state with the squeezed value to ensure different outputs on subsequent calls
         self.absorb_fr(&fr_element);
@@ -174,7 +148,6 @@ impl FiatShamirTranscript {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_std::test_rng;
 
     #[test]
     fn test_transcript_deterministic() {

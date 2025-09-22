@@ -326,7 +326,7 @@ mod tests {
             tile_k: 128,
             scale_num: 3,
             seed: 42,
-            freivalds_rounds: 5,
+            freivalds_rounds: 16,
             weights1_path: None,
             weights2_path: None,
             x0_path: None,

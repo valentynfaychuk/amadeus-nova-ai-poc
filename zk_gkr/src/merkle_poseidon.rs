@@ -1,12 +1,9 @@
 use crate::{Fr, Result, GkrError};
-use ark_ff::Field;
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
-use ark_crypto_primitives::crh::{CRHScheme, TwoToOneCRHScheme};
-use ark_crypto_primitives::crh::poseidon::{CRH, TwoToOneCRH};
-use ark_bn254::Fq;
-use serde::{Serialize, Deserialize};
+use ark_ff::{Zero, PrimeField};
+use ark_serialize::CanonicalSerialize;
+use sha2::{Sha256, Digest};
 
-/// Poseidon-based binary Merkle tree
+/// SHA256-based binary Merkle tree
 #[derive(Debug, Clone)]
 pub struct PoseidonMerkleTree {
     /// Tree nodes stored level by level (bottom up)
@@ -15,8 +12,6 @@ pub struct PoseidonMerkleTree {
     leaf_count: usize,
     /// Tree height (log2 of next power of 2 >= leaf_count)
     height: usize,
-    /// Poseidon parameters
-    hasher_params: <TwoToOneCRH<Fq> as TwoToOneCRHScheme>::Parameters,
 }
 
 /// Merkle path for opening a specific leaf
@@ -31,7 +26,7 @@ pub struct MerklePath {
 }
 
 impl PoseidonMerkleTree {
-    /// Build a Poseidon-Merkle tree from leaves in hypercube order
+    /// Build a SHA256-Merkle tree from leaves in hypercube order
     pub fn build_tree(leaves: &[Fr]) -> Result<Self> {
         if leaves.is_empty() {
             return Err(GkrError::InvalidDimensions("Empty leaves".to_string()));
@@ -41,11 +36,6 @@ impl PoseidonMerkleTree {
         let height = (leaf_count as f64).log2().ceil() as usize;
         let padded_size = 1 << height;
 
-        // Initialize Poseidon parameters
-        let rng = &mut rand::thread_rng();
-        let hasher_params = TwoToOneCRH::<Fq>::setup(rng)
-            .map_err(|e| GkrError::SerializationError(format!("Failed to setup Poseidon: {:?}", e)))?;
-
         let mut nodes = Vec::new();
 
         // Bottom level: pad leaves to next power of 2
@@ -54,7 +44,7 @@ impl PoseidonMerkleTree {
         nodes.push(current_level.clone());
 
         // Build tree bottom-up
-        for level in 0..height {
+        for _level in 0..height {
             let mut next_level = Vec::new();
             let current_size = current_level.len();
 
@@ -66,8 +56,8 @@ impl PoseidonMerkleTree {
                     Fr::zero()
                 };
 
-                // Hash left and right children
-                let parent = Self::poseidon_hash2(&hasher_params, &left, &right)?;
+                // Hash left and right children using SHA256
+                let parent = Self::sha256_hash2(&left, &right)?;
                 next_level.push(parent);
             }
 
@@ -79,7 +69,6 @@ impl PoseidonMerkleTree {
             nodes,
             leaf_count,
             height,
-            hasher_params,
         })
     }
 
@@ -150,11 +139,6 @@ impl PoseidonMerkleTree {
             return Ok(false);
         }
 
-        // Initialize Poseidon parameters for verification
-        let rng = &mut rand::thread_rng();
-        let hasher_params = TwoToOneCRH::<Fq>::setup(rng)
-            .map_err(|e| GkrError::SerializationError(format!("Failed to setup Poseidon: {:?}", e)))?;
-
         let mut current_hash = *leaf_value;
 
         // Traverse path from leaf to root
@@ -165,45 +149,38 @@ impl PoseidonMerkleTree {
                 (current_hash, *sibling)
             };
 
-            current_hash = Self::poseidon_hash2(&hasher_params, &left, &right)?;
+            current_hash = Self::sha256_hash2(&left, &right)?;
         }
 
         Ok(current_hash == *root)
     }
 
-    /// Hash two field elements using Poseidon
-    fn poseidon_hash2(
-        params: &<TwoToOneCRH<Fq> as TwoToOneCRHScheme>::Parameters,
-        left: &Fr,
-        right: &Fr,
-    ) -> Result<Fr> {
-        // Convert Fr to Fq (they're the same field for BN254)
-        let left_fq = {
-            let mut bytes = Vec::new();
-            left.serialize_compressed(&mut bytes)
-                .map_err(|e| GkrError::SerializationError(format!("Left serialization failed: {:?}", e)))?;
-            Fq::deserialize_compressed(&*bytes)
-                .map_err(|e| GkrError::SerializationError(format!("Left deserialization failed: {:?}", e)))?
-        };
+    /// Hash two field elements using SHA256
+    fn sha256_hash2(left: &Fr, right: &Fr) -> Result<Fr> {
+        let mut hasher = Sha256::new();
 
-        let right_fq = {
-            let mut bytes = Vec::new();
-            right.serialize_compressed(&mut bytes)
-                .map_err(|e| GkrError::SerializationError(format!("Right serialization failed: {:?}", e)))?;
-            Fq::deserialize_compressed(&*bytes)
-                .map_err(|e| GkrError::SerializationError(format!("Right deserialization failed: {:?}", e)))?
-        };
+        // Serialize both field elements
+        let mut left_bytes = Vec::new();
+        left.serialize_compressed(&mut left_bytes)
+            .map_err(|e| GkrError::SerializationError(format!("Left serialization failed: {:?}", e)))?;
 
-        let hash_fq = TwoToOneCRH::<Fq>::evaluate(params, &left_fq, &right_fq)
-            .map_err(|e| GkrError::SerializationError(format!("Hash evaluation failed: {:?}", e)))?;
+        let mut right_bytes = Vec::new();
+        right.serialize_compressed(&mut right_bytes)
+            .map_err(|e| GkrError::SerializationError(format!("Right serialization failed: {:?}", e)))?;
 
-        // Convert back to Fr
-        let mut bytes = Vec::new();
-        hash_fq.serialize_compressed(&mut bytes)
-            .map_err(|e| GkrError::SerializationError(format!("Hash serialization failed: {:?}", e)))?;
-        let hash_fr = Fr::deserialize_compressed(&*bytes)
-            .map_err(|e| GkrError::SerializationError(format!("Hash deserialization failed: {:?}", e)))?;
+        // Hash the concatenated bytes
+        hasher.update(&left_bytes);
+        hasher.update(&right_bytes);
+        let hash_bytes = hasher.finalize();
 
+        // Convert hash back to field element (take first 31 bytes to stay in field)
+        let mut field_bytes = [0u8; 32];
+        field_bytes[..31].copy_from_slice(&hash_bytes[..31]);
+        // Clear the top bit to ensure we're in the field
+        field_bytes[31] = 0;
+
+        // Convert to Fr using from_bytes_mod_order
+        let hash_fr = Fr::from_le_bytes_mod_order(&field_bytes);
         Ok(hash_fr)
     }
 
@@ -251,7 +228,6 @@ impl PoseidonMerkleTree {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_std::test_rng;
 
     #[test]
     fn test_merkle_tree_build_and_verify() {

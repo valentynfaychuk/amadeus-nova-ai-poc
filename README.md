@@ -456,33 +456,36 @@ python3 scripts/bench.py \
   --threads auto \
   --modes one_pass \
   --repeats 1 \
-  --out bench/results_demo.csv
+  --out results_demo.csv
 
 # 3) Full grid (longer)
 python3 scripts/bench.py \
   --grid K=4096,12288,16384,24576 \
   --tile-k 1024,4096,8192 \
-  --rounds 8,16,32 \
+  --rounds 16,32,64 \
   --threads 1,auto \
   --modes one_pass,k_pass_legacy \
   --repeats 3 \
-  --out bench/results.csv
+  --out results.csv
 
 # 4) Plot
-python3 scripts/plot_bench.py --in bench/results.csv --outdir bench/plots
+python3 scripts/plot_bench.py --in results.csv --outdir plots
 ```
 
 ### Production-Scale Presets
 
 ```bash
 # 7B-like model dimensions
-python3 scripts/bench.py --grid K=12288 --tile-k 8192 --rounds 16 --threads auto --modes one_pass --repeats 3 --out bench/7b.csv
+python3 scripts/bench.py --grid K=12288 --tile-k 8192 --rounds 16 --threads auto --modes one_pass --repeats 3 --out 7b.csv
 
 # Mid-size model
-python3 scripts/bench.py --grid K=16384 --tile-k 8192 --rounds 16 --threads auto --modes one_pass --repeats 3 --out bench/mid.csv
+python3 scripts/bench.py --grid K=16384 --tile-k 8192 --rounds 16 --threads auto --modes one_pass --repeats 3 --out mid.csv
 
 # Large model
-python3 scripts/bench.py --grid K=24576 --tile-k 16384 --rounds 16 --threads auto --modes one_pass --repeats 3 --out bench/large.csv
+python3 scripts/bench.py --grid K=24576 --tile-k 16384 --rounds 16 --threads auto --modes one_pass --repeats 3 --out large.csv
+
+# GKR vs Freivalds comparison
+python3 scripts/bench.py --grid K=4096,16384 --tile-k 4096 --rounds 16 --threads auto --modes one_pass,gkr --repeats 2 --out comparison.csv
 ```
 
 ### Benchmark Features
@@ -492,14 +495,14 @@ The benchmarking suite measures:
 - **I/O metrics** (bytes read/written, best-effort on macOS)
 - **Proof and transaction sizes** to verify < 1 KB constraint
 - **Thread scaling** with configurable RAYON_NUM_THREADS
-- **One-pass vs k-pass Freivalds** performance comparison
+- **One-pass vs k-pass Freivalds vs GKR** performance comparison
 
 Configuration grid:
 - `K ∈ {4096, 12288, 16384, 24576}` - Matrix width (LLM layer dimensions)
-- `tile_k ∈ {1024, 4096, 8192, 16384}` - Streaming tile size
-- `rounds ∈ {8, 16, 32}` - Freivalds security parameter
+- `tile_k ∈ {1024, 4096, 8192, 16384}` - Streaming tile size (Freivalds only)
+- `rounds ∈ {16, 32, 64}` - Freivalds security parameter (Freivalds only)
 - `threads ∈ {1, auto}` - Thread count (auto = all cores)
-- `mode ∈ {one_pass, k_pass_legacy}` - Freivalds algorithm variant
+- `mode ∈ {one_pass, k_pass_legacy, gkr}` - Verification algorithm
 
 ### Data Generation
 
@@ -523,7 +526,8 @@ The plotting script generates:
 
 - The benchmark suite sets `RAYON_NUM_THREADS` automatically per run
 - **One-pass Freivalds** should be ≫ faster than k-pass (≥10× for k=16–32)
-- Proof bytes remain stable (~200–300 B) regardless of K
+- **GKR mode** provides cryptographic security without matrix access during verification
+- Proof bytes: Freivalds (~200–300 B), GKR (~KB to tens of KB)
 - I/O counters may be unavailable on macOS (shown as None)
 - Each configuration is run multiple times; first run may be slower (cold cache)
 
@@ -544,7 +548,6 @@ python3 scripts/gen.py --k 8192 --seed 123
 # - data/w1_16x{K}.bin    # Large layer weights (binary, 16×K)
 # - data/w2_16x16.json    # Tail layer weights (JSON, 16×16)
 # - data/x0_{K}.json      # Input vector (JSON, K elements)
-# - run_inference.sh      # Ready-to-run script
 ```
 
 ### Custom Weight Files
@@ -564,31 +567,43 @@ echo '[[1,0,0...],[0,1,0...]...]' > w2.json  # 16×16 matrix
 # Create input vector
 echo '[1, 2, 3, ..., 1024]' > x0.json
 
-# Run inference
+# Traditional inference + Freivalds verification
 nova_poc infer --k 1024 \
     --weights1-path w1.bin \
     --weights2-path w2.json \
     --x0-path x0.json \
     --out my_run.json
+
+# Alternative: GKR proof (no verifier matrix access)
+nova_poc prove-gkr \
+    --weights1-path w1.bin \
+    --x0-path x0.json \
+    --m 16 --k 1024 \
+    --out-dir gkr_proof
 ```
 
 ### Batch Verification
 
 ```bash
-# Generate multiple proofs
+# Traditional Freivalds workflow
 for seed in 42 123 456; do
     nova_poc infer --preset demo --seed $seed --out run_$seed.json
     nova_poc prove run_$seed.json --out-dir proof_$seed
-done
-
-# Verify all proofs (option 1: with Freivalds re-verification)
-for seed in 42 123 456; do
     nova_poc verify run_$seed.json --proof-path proof_$seed/proof.bin --weights1-path w1.bin
 done
 
-# Or verify without Freivalds (option 2: faster)
-for seed in 42 123 456; do
-    nova_poc verify run_$seed.json --proof-path proof_$seed/proof.bin --skip-freivalds
+# GKR workflow (no matrix access during verification)
+for K in 4096 8192 16384; do
+    nova_poc prove-gkr \
+        --weights1-path data/w1_16x${K}.bin \
+        --x0-path data/x0_${K}.json \
+        --m 16 --k $K \
+        --salt "batch_${K}" \
+        --out-dir gkr_${K}
+
+    nova_poc verify-gkr \
+        --proof-path gkr_${K}/gkr_proof.bin \
+        --public-path gkr_${K}/public.json
 done
 ```
 

@@ -1,0 +1,13 @@
+timestamp,git_commit,device,os,cpu_model,cores_logical,cores_physical,ram_gb,K,tile_k,rounds,threads,mode,seed,stage,wall_s,user_s,sys_s,peak_rss_mb,bytes_read,bytes_written,proof_bytes,publics_bytes,tx_bytes,success,exit_code
+2025-09-22T03:53:50.687853,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,4096,4096,16,10,one_pass,42,infer,0.577,0.0,0.001,31.33,,,128,340,468,True,0
+2025-09-22T03:53:50.687853,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,4096,4096,16,10,one_pass,42,prove,0.145,0.0,0.001,31.33,,,128,340,468,True,0
+2025-09-22T03:53:50.687853,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,4096,4096,16,10,one_pass,42,verify,0.548,0.0,0.001,31.33,,,128,340,468,True,0
+2025-09-22T03:53:50.698010,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,4096,4096,16,10,gkr,42,gkr_prove,0.004,0.0,0.001,31.36,,,,,0,False,2
+2025-09-22T03:53:50.698010,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,4096,4096,16,10,gkr,42,prove,0,,,,,,,,0,True,0
+2025-09-22T03:53:50.698010,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,4096,4096,16,10,gkr,42,gkr_verify,0.004,0.0,0.001,31.36,,,,,0,False,2
+2025-09-22T03:53:53.077474,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,8192,4096,16,10,one_pass,42,infer,1.142,0.0,0.001,31.38,,,128,341,469,True,0
+2025-09-22T03:53:53.077474,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,8192,4096,16,10,one_pass,42,prove,0.145,0.0,0.001,31.38,,,128,341,469,True,0
+2025-09-22T03:53:53.077474,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,8192,4096,16,10,one_pass,42,verify,1.091,0.0,0.001,31.47,,,128,341,469,True,0
+2025-09-22T03:53:53.086012,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,8192,4096,16,10,gkr,42,gkr_prove,0.004,0.0,0.001,31.59,,,,,0,False,2
+2025-09-22T03:53:53.086012,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,8192,4096,16,10,gkr,42,prove,0,,,,,,,,0,True,0
+2025-09-22T03:53:53.086012,3207b00,macbook.local,Darwin 25.0.0,arm,10,10,32.0,8192,4096,16,10,gkr,42,gkr_verify,0.003,0.0,0.001,31.59,,,,,0,False,2

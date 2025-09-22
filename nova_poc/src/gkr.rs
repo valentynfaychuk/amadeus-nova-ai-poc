@@ -3,8 +3,9 @@ use crate::formats::*;
 use ark_serialize::CanonicalSerialize;
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
-use zk_gkr::{Fr, Field};
+use std::path::{Path, PathBuf};
+use zk_gkr::Fr;
+use ark_ff::Zero;
 use zk_gkr::transcript::FiatShamirTranscript;
 use zk_gkr::merkle_poseidon::PoseidonMerkleTree;
 use zk_gkr::mle::MleUtils;
@@ -306,4 +307,215 @@ fn field_to_hex(field: &Fr) -> String {
     let mut bytes = Vec::new();
     field.serialize_compressed(&mut bytes).unwrap();
     hex::encode(bytes)
+}
+
+/// Run GKR demo with generated test data
+pub fn run_demo(seed: u64, m: usize, k: usize) -> Result<()> {
+    println!("🎯 Running GKR Demo");
+    println!("   Matrix dimensions: {}×{}", m, k);
+    println!("   Seed: {}", seed);
+
+    // Create temporary directory for demo
+    let temp_dir = std::env::temp_dir().join(format!("gkr_demo_{}", seed));
+    fs::create_dir_all(&temp_dir)?;
+
+    // Generate test data
+    println!("📊 Generating test data...");
+    let (w_path, x_path) = generate_test_data(m, k, seed, &temp_dir)?;
+
+    // Run proof generation
+    let prove_args = crate::cli::ProveGkrArgs {
+        weights1_path: w_path,
+        x0_path: x_path,
+        m,
+        k,
+        salt: "deadbeef".to_string(),
+        out_dir: temp_dir.join("proof"),
+        model_id: Some(format!("demo_{}x{}", m, k)),
+        vk_hash: Some("demo".to_string()),
+    };
+
+    let start_time = std::time::Instant::now();
+    run_prove_gkr(prove_args)?;
+    let prove_time = start_time.elapsed();
+
+    // Run verification
+    let verify_args = crate::cli::VerifyGkrArgs {
+        proof_path: temp_dir.join("proof/gkr_proof.bin"),
+        public_path: temp_dir.join("proof/public.json"),
+        with_tail: false,
+    };
+
+    let verify_start = std::time::Instant::now();
+    run_verify_gkr(verify_args)?;
+    let verify_time = verify_start.elapsed();
+
+    println!("✅ Demo completed successfully!");
+    println!("   Proving time: {:.2} ms", prove_time.as_secs_f64() * 1000.0);
+    println!("   Verification time: {:.2} ms", verify_time.as_secs_f64() * 1000.0);
+
+    // Clean up temporary files
+    let _ = fs::remove_dir_all(&temp_dir);
+
+    Ok(())
+}
+
+/// Run comprehensive benchmark across different matrix sizes
+pub fn run_benchmark(sizes_str: String, repeats: usize, output_path: String) -> Result<()> {
+    println!("🚀 Running GKR Benchmarks");
+
+    // Parse sizes
+    let sizes: Vec<usize> = sizes_str
+        .split(',')
+        .map(|s| s.trim().parse())
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    println!("   Matrix sizes (K): {:?}", sizes);
+    println!("   Repeats per size: {}", repeats);
+
+    let mut csv_writer = csv::Writer::from_path(&output_path)?;
+
+    // Write CSV header
+    csv_writer.write_record(&[
+        "timestamp", "m", "k", "run", "stage", "time_ms", "memory_mb", "proof_size_kb"
+    ])?;
+
+    for &k in &sizes {
+        let m = 16; // Fixed m=16 for neural network layers
+        println!("\n📐 Benchmarking {}×{} matrices...", m, k);
+
+        for run in 1..=repeats {
+            println!("  Run {}/{}", run, repeats);
+
+            // Create unique directory for this run
+            let run_dir = std::env::temp_dir().join(format!("bench_{}x{}_{}", m, k, run));
+            fs::create_dir_all(&run_dir)?;
+
+            // Generate test data
+            let seed = 42 + run as u64;
+            let (w_path, x_path) = generate_test_data(m, k, seed, &run_dir)?;
+
+            // Benchmark proving
+            let prove_args = crate::cli::ProveGkrArgs {
+                weights1_path: w_path,
+                x0_path: x_path,
+                m,
+                k,
+                salt: "deadbeef".to_string(),
+                out_dir: run_dir.join("proof"),
+                model_id: Some(format!("bench_{}x{}", m, k)),
+                vk_hash: Some("benchmark".to_string()),
+            };
+
+            let memory_before = get_memory_usage();
+            let prove_start = std::time::Instant::now();
+
+            run_prove_gkr(prove_args)?;
+
+            let prove_time = prove_start.elapsed();
+            let memory_after = get_memory_usage();
+            let memory_used = memory_after.saturating_sub(memory_before);
+
+            // Get proof size
+            let proof_path = run_dir.join("proof/gkr_proof.bin");
+            let proof_size = if proof_path.exists() {
+                fs::metadata(&proof_path)?.len() as f64 / 1024.0 // KB
+            } else {
+                0.0
+            };
+
+            // Benchmark verification
+            let verify_args = crate::cli::VerifyGkrArgs {
+                proof_path: run_dir.join("proof/gkr_proof.bin"),
+                public_path: run_dir.join("proof/public.json"),
+                with_tail: false,
+            };
+
+            let verify_start = std::time::Instant::now();
+            run_verify_gkr(verify_args)?;
+            let verify_time = verify_start.elapsed();
+
+            // Write results to CSV
+            let timestamp = chrono::Utc::now().to_rfc3339();
+
+            csv_writer.write_record(&[
+                &timestamp,
+                &m.to_string(),
+                &k.to_string(),
+                &run.to_string(),
+                "prove",
+                &format!("{:.2}", prove_time.as_secs_f64() * 1000.0),
+                &format!("{:.2}", memory_used as f64 / 1024.0 / 1024.0),
+                &format!("{:.2}", proof_size),
+            ])?;
+
+            csv_writer.write_record(&[
+                &timestamp,
+                &m.to_string(),
+                &k.to_string(),
+                &run.to_string(),
+                "verify",
+                &format!("{:.2}", verify_time.as_secs_f64() * 1000.0),
+                &"0.0".to_string(), // Verification uses minimal memory
+                &format!("{:.2}", proof_size),
+            ])?;
+
+            csv_writer.flush()?;
+
+            // Clean up
+            let _ = fs::remove_dir_all(&run_dir);
+
+            println!("    Prove: {:.2}ms, Verify: {:.2}ms, Proof: {:.1}KB",
+                     prove_time.as_secs_f64() * 1000.0,
+                     verify_time.as_secs_f64() * 1000.0,
+                     proof_size);
+        }
+    }
+
+    println!("✅ Benchmark completed! Results saved to: {}", output_path);
+    Ok(())
+}
+
+/// Generate test data for benchmarking
+fn generate_test_data(m: usize, k: usize, seed: u64, dir: &Path) -> Result<(PathBuf, PathBuf)> {
+    use rand::prelude::*;
+
+    let mut rng = StdRng::seed_from_u64(seed);
+
+    // Generate weight matrix (m×k)
+    let mut weights_data = Vec::with_capacity(m * k * 2); // 2 bytes per i16
+    for _ in 0..(m * k) {
+        let weight: i16 = rng.gen_range(-100..=100);
+        weights_data.extend_from_slice(&weight.to_le_bytes());
+    }
+
+    let w_path = dir.join("weights.bin");
+    fs::write(&w_path, weights_data)?;
+
+    // Generate input vector (k elements)
+    let x_vector: Vec<i16> = (0..k).map(|_| rng.gen_range(-50..=50)).collect();
+    let x_path = dir.join("input.json");
+    fs::write(&x_path, serde_json::to_string_pretty(&x_vector)?)?;
+
+    Ok((w_path, x_path))
+}
+
+/// Get current memory usage in bytes
+fn get_memory_usage() -> usize {
+    use std::fs;
+
+    if let Ok(status) = fs::read_to_string("/proc/self/status") {
+        for line in status.lines() {
+            if line.starts_with("VmRSS:") {
+                if let Some(kb_str) = line.split_whitespace().nth(1) {
+                    if let Ok(kb) = kb_str.parse::<usize>() {
+                        return kb * 1024; // Convert KB to bytes
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback for non-Linux systems
+    0
 }
