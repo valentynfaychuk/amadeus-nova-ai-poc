@@ -12,6 +12,7 @@ bench
 *.bin
 *.csv
 *.png
+!scripts/benchmark.png
 *.pdf
 *.log
 *.tmp

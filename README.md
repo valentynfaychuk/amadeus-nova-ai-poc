@@ -4,18 +4,17 @@ High-performance implementation of GKR (Generalized Knight's Rook) zero-knowledg
 
 ## Architecture
 
-Nova AI consists of four main components:
+Nova AI consists of three main components:
 
 - **`zk_gkr/`** - Core GKR protocol implementation with sum-check, Merkle commitments, and Fiat-Shamir transcript
 - **`nova_poc/`** - Command-line interface for proof generation, verification, and benchmarking
-- **`engine/`** - Matrix computation engine with optimized field arithmetic
-- **`circuit/`** - R1CS circuit definitions for constraint systems
+- **`circuit/`** - R1CS circuit definitions for constraint systems (legacy Groth16 support)
 
 ## Performance
 
 Current benchmarks on Apple Silicon M-series CPU (16×K matrices):
 
-![GKR Performance Benchmarks](docs/readme_benchmark.png)
+![GKR Performance Benchmarks](scripts/benchmark.png)
 
 **Key characteristics:**
 - **Near-linear proving time**: O(K^1.05) scaling up to 50K matrices
@@ -33,10 +32,10 @@ cargo build --release
 ./target/release/nova_poc demo
 
 # Generate custom proof
-./target/release/nova_poc prove --m 16 --k 8192
+./target/release/nova_poc prove --weights1-path data/weights.bin --x0-path data/input.bin --m 16 --k 8192
 
 # Verify a proof
-./target/release/nova_poc verify --proof-path proof/gkr_proof.bin --public-path proof/public.json
+./target/release/nova_poc verify --proof-path gkr_out/gkr_proof.bin --public-path gkr_out/public.json
 
 # Run benchmarks
 ./target/release/nova_poc benchmark --sizes 1024,2048,4096 --repeats 3
@@ -52,17 +51,15 @@ The implementation has undergone comprehensive security analysis including:
 - **Field overflow**: Extreme value edge cases
 - **Zero-knowledge**: Information leakage analysis
 
-All attack vectors are successfully defended. See [`docs/`](docs/) for detailed security analysis.
+See [`SECURITY.md`](SECURITY.md) for detailed security analysis.
 
 ## Scripts
 
-The [`scripts/`](scripts/README.md) directory contains tools for benchmarking, performance analysis, and security testing. See the [scripts documentation](scripts/README.md) for usage details.
+The [`scripts/`](scripts/) directory contains tools for benchmarking, performance analysis, and security testing:
 
-## Documentation
-
-- [`docs/GKR_SECURITY_ANALYSIS.md`](docs/GKR_SECURITY_ANALYSIS.md) - Comprehensive security evaluation
-- [`docs/GKR_PERFORMANCE_ANALYSIS.md`](docs/GKR_PERFORMANCE_ANALYSIS.md) - Performance scaling analysis
-- [`docs/SECURITY_FIX_REPORT.md`](docs/SECURITY_FIX_REPORT.md) - Vulnerability fixes and validation
+- `gkr_attack_suite.sh` - Comprehensive security testing suite
+- `gkr_stress_test.py` - Extended testing under more stress
+- `benchmark.py` - Automated benchmarking with CSV & PNG output
 
 ## Contributing
 
@@ -70,7 +67,3 @@ The [`scripts/`](scripts/README.md) directory contains tools for benchmarking, p
 2. Test: `cargo test --workspace`
 3. Format: `cargo fmt --all`
 4. Lint: `cargo clippy --all-targets`
-
-## License
-
-MIT License - see LICENSE file for details.

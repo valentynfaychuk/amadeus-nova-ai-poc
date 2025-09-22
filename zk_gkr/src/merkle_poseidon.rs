@@ -3,7 +3,11 @@ use ark_ff::{PrimeField, Zero};
 use ark_serialize::CanonicalSerialize;
 use sha2::{Digest, Sha256};
 
-/// SHA256-based binary Merkle tree
+// TODO: Replace SHA256 with Poseidon hash for better efficiency in ZK circuits
+// Currently using SHA256 as a placeholder for initial implementation
+// Poseidon parameters need to be properly configured for the BN254 curve
+
+/// SHA256-based binary Merkle tree (TODO: replace with Poseidon)
 #[derive(Debug, Clone)]
 pub struct PoseidonMerkleTree {
     /// Tree nodes stored level by level (bottom up)
@@ -27,6 +31,7 @@ pub struct MerklePath {
 
 impl PoseidonMerkleTree {
     /// Build a SHA256-Merkle tree from leaves in hypercube order
+    /// TODO: Replace SHA256 with Poseidon hash
     pub fn build_tree(leaves: &[Fr]) -> Result<Self> {
         if leaves.is_empty() {
             return Err(GkrError::InvalidDimensions("Empty leaves".to_string()));

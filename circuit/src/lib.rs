@@ -16,10 +16,7 @@ use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result as 
 pub mod compressed;
 
 #[cfg(test)]
-mod debug_test;
-
-#[cfg(test)]
-mod minimal_test;
+mod tests;
 
 /// Tiny Groth16 circuit for 16×16 tail layer only
 pub const N: usize = 16; // Fixed 16×16 layer size for tail

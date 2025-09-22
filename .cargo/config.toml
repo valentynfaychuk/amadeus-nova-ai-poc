@@ -1,3 +1,0 @@
-[alias]
-nova_poc = ["run", "--release", "-p", "nova_poc"]
-

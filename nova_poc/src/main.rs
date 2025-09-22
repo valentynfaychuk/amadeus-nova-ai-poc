@@ -2,11 +2,6 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod cli;
-mod formats;
-mod infer;
-mod prove;
-mod verify;
-
 use cli::*;
 
 mod gkr;

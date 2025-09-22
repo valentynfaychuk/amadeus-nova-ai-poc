@@ -1,63 +1,51 @@
 #!/bin/bash
-# GKR STRESS TEST: Advanced Attacks to Give the Verifier a "Really Difficult Time"
-# This script implements sophisticated attacks designed to thoroughly test GKR robustness
+# GKR Stress Test: Advanced attack scenarios against the verifier
 
 set -e
 
-echo "🔥 GKR VERIFIER STRESS TEST - ADVANCED ATTACK SCENARIOS"
-echo "======================================================="
-echo ""
-echo "This script implements advanced cryptographic attacks designed to"
-echo "thoroughly stress-test the GKR zero-knowledge proof verifier."
-echo ""
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-NC='\033[0m'
+echo "GKR STRESS TEST"
+echo "==============="
 
 section() {
-    echo -e "\n${BLUE}🚨 ATTACK $1: $2 🚨${NC}\n"
+    echo ""
+    echo "ATTACK $1: $2"
+    echo "$(printf '%.0s-' {1..40})"
 }
 
 attack_result() {
     if [ $1 -eq 0 ]; then
-        echo -e "${RED}💥 ATTACK SUCCESSFUL: $2${NC}"
-        echo -e "${RED}   This represents a CRITICAL SECURITY BREACH!${NC}"
+        echo "ATTACK SUCCESSFUL: $2"
+        echo "CRITICAL SECURITY BREACH DETECTED"
         exit 1
     else
-        echo -e "${GREEN}🛡️  DEFENSE SUCCESSFUL: $2${NC}"
+        echo "DEFENSE SUCCESSFUL: $2"
     fi
 }
 
 # Ensure we have the release binary
 if [ ! -f "./target/release/nova_poc" ]; then
-    echo "❌ Error: Release binary not found. Run 'cargo build --release' first"
+    echo "Error: Release binary not found. Run 'cargo build --release' first"
     exit 1
 fi
 
-echo "🛠️  Setting up attack environment..."
+echo "Setting up attack environment..."
 rm -rf gkr_attacks/
 mkdir -p gkr_attacks/{data,proofs}
 
 # Generate baseline proof for comparison
-echo "📊 Generating baseline legitimate proof..."
+echo "Generating baseline legitimate proof..."
 ./target/release/nova_poc demo --seed 42 --m 16 --k 1024 > /dev/null 2>&1
 
 section "1" "BINARY CORRUPTION ATTACK"
 
-echo "🎯 TARGET: Proof binary integrity"
-echo "🔬 TECHNIQUE: Strategic byte manipulation to find parser weaknesses"
-echo ""
+echo "TARGET: Proof binary integrity"
+echo "TECHNIQUE: Strategic byte manipulation"
 
 # Copy legitimate proof for corruption
 cp proof_1024/gkr_proof.bin gkr_attacks/data/original_proof.bin
 cp proof_1024/public.json gkr_attacks/data/original_public.json
 
-echo "🔧 Testing binary corruption resistance..."
+echo "Testing binary corruption resistance..."
 
 # Test various corruption strategies
 corruption_count=0
@@ -74,16 +62,16 @@ for offset in 10 50 100 200 500 1000 1500 2000; do
         printf "\\$(printf %o $((byte_val)))" | dd of=gkr_attacks/data/corrupted_${offset}_${byte_val}.bin bs=1 seek=${offset} count=1 conv=notrunc 2>/dev/null
 
         # Test if corrupted proof still verifies
-        if ./target/release/nova_poc verify \
+        if ./target/release/nova_poc verify-gkr \
             --proof-path gkr_attacks/data/corrupted_${offset}_${byte_val}.bin \
             --public-path gkr_attacks/data/original_public.json > /dev/null 2>&1; then
             corruption_count=$((corruption_count + 1))
-            echo "🚨 Corrupted proof at offset $offset with value $byte_val VERIFIED!"
+            echo "CRITICAL: Corrupted proof at offset $offset with value $byte_val VERIFIED"
         fi
     done
 done
 
-echo "📊 Binary corruption results: $corruption_count/$total_tests corrupted proofs verified"
+echo "Binary corruption results: $corruption_count/$total_tests corrupted proofs verified"
 
 if [ $corruption_count -gt 0 ]; then
     attack_result 0 "Binary corruption attack succeeded - some corrupted proofs verified!"
@@ -93,12 +81,11 @@ fi
 
 section "2" "PROOF SUBSTITUTION ATTACK"
 
-echo "🎯 TARGET: Public input consistency"
-echo "🔬 TECHNIQUE: Using valid proof with manipulated public inputs"
-echo ""
+echo "TARGET: Public input consistency"
+echo "TECHNIQUE: Using valid proof with manipulated public inputs"
 
 # Generate second legitimate proof with different salt
-echo "🔧 Generating second proof for substitution attack..."
+echo " Generating second proof for substitution attack..."
 ./target/release/nova_poc demo --seed 1337 --m 16 --k 1024 > /dev/null 2>&1
 
 # Find the second proof (it will be in a different temp directory)
@@ -106,7 +93,7 @@ echo "🔧 Generating second proof for substitution attack..."
 cp proof_1024/gkr_proof.bin gkr_attacks/data/proof_for_substitution.bin
 
 # Create malicious public inputs
-echo "🎭 Creating malicious public inputs..."
+echo " Creating malicious public inputs..."
 cat > gkr_attacks/data/malicious_public.json << 'EOF'
 {
   "c": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -137,7 +124,7 @@ with open('gkr_attacks/data/malicious_public.json', 'w') as f:
     json.dump(data, f, indent=2)
 "
 
-echo "🚨 Testing proof substitution attack..."
+echo " Testing proof substitution attack..."
 if ./target/release/nova_poc verify \
     --proof-path gkr_attacks/data/proof_for_substitution.bin \
     --public-path gkr_attacks/data/malicious_public.json > /dev/null 2>&1; then
@@ -148,11 +135,11 @@ fi
 
 section "3" "FIELD OVERFLOW ATTACK"
 
-echo "🎯 TARGET: Field arithmetic overflow handling"
-echo "🔬 TECHNIQUE: Creating matrices with extreme values"
+echo " TARGET: Field arithmetic overflow handling"
+echo " TECHNIQUE: Creating matrices with extreme values"
 echo ""
 
-echo "🔧 Creating extreme value matrices..."
+echo " Creating extreme value matrices..."
 
 # Create weight matrix with maximum/minimum values
 python3 << 'EOF'
@@ -175,38 +162,38 @@ extreme_input = [32767 if i % 2 == 0 else -32768 for i in range(k)]
 with open('gkr_attacks/data/extreme_input.json', 'w') as f:
     json.dump(extreme_input, f)
 
-print(f"✅ Created extreme matrix: sum = {np.sum(extreme_matrix)}")
+print(f" Created extreme matrix: sum = {np.sum(extreme_matrix)}")
 print(f"   Matrix range: {np.min(extreme_matrix)} to {np.max(extreme_matrix)}")
 EOF
 
-echo "🚨 Testing field overflow attack..."
+echo " Testing field overflow attack..."
 if ./target/release/nova_poc prove \
     --weights1-path gkr_attacks/data/extreme_weights.bin \
     --x0-path gkr_attacks/data/extreme_input.json \
     --m 16 --k 1024 \
     --out-dir gkr_attacks/proofs/extreme > /dev/null 2>&1; then
 
-    echo "⚠️  Extreme value proof generation succeeded"
+    echo "  Extreme value proof generation succeeded"
 
     if ./target/release/nova_poc verify \
         --proof-path gkr_attacks/proofs/extreme/gkr_proof.bin \
         --public-path gkr_attacks/proofs/extreme/public.json > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ Extreme value proof verified correctly${NC}"
+        "
         echo "   System handles field overflow correctly"
     else
         attack_result 0 "Field overflow caused verification failure!"
     fi
 else
-    echo -e "${YELLOW}⚠️  Extreme value proof generation failed (expected overflow protection)${NC}"
+    "
 fi
 
 section "4" "ZERO-KNOWLEDGE BYPASS ATTACK"
 
-echo "🎯 TARGET: Zero-knowledge property"
-echo "🔬 TECHNIQUE: Attempting to extract weight information from proofs"
+echo " TARGET: Zero-knowledge property"
+echo " TECHNIQUE: Attempting to extract weight information from proofs"
 echo ""
 
-echo "🔧 Generating multiple proofs with same input, different weights..."
+echo " Generating multiple proofs with same input, different weights..."
 
 # Create different weight matrices
 for i in 1 2 3; do
@@ -237,7 +224,7 @@ EOF
         --out-dir gkr_attacks/proofs/zk_${i} > /dev/null 2>&1
 done
 
-echo "📊 Analyzing proof sizes for information leakage..."
+echo " Analyzing proof sizes for information leakage..."
 proof_sizes=""
 for i in 1 2 3; do
     if [ -f "gkr_attacks/proofs/zk_${i}/gkr_proof.bin" ]; then
@@ -260,12 +247,12 @@ if len(sizes) >= 3:
     print(f"   Size variance: {variance} bytes ({variance/avg_size*100:.2f}%)")
 
     if variance > avg_size * 0.1:  # More than 10% variance
-        print("🚨 Significant size variance detected - potential information leakage!")
+        print(" Significant size variance detected - potential information leakage!")
         sys.exit(1)
     else:
-        print("✅ Proof sizes consistent - zero-knowledge property maintained")
+        print(" Proof sizes consistent - zero-knowledge property maintained")
 else:
-    print("❌ Insufficient proofs generated for analysis")
+    print(" Insufficient proofs generated for analysis")
     sys.exit(1)
 EOF
 
@@ -277,11 +264,11 @@ fi
 
 section "5" "DETERMINISTIC CHALLENGE ATTACK"
 
-echo "🎯 TARGET: Challenge unpredictability"
-echo "🔬 TECHNIQUE: Testing for predictable challenge generation"
+echo " TARGET: Challenge unpredictability"
+echo " TECHNIQUE: Testing for predictable challenge generation"
 echo ""
 
-echo "🔧 Testing challenge determinism with identical inputs..."
+echo " Testing challenge determinism with identical inputs..."
 
 # Generate two proofs with identical everything
 for run in 1 2; do
@@ -292,14 +279,14 @@ for run in 1 2; do
         --out-dir gkr_attacks/proofs/deterministic_${run} > /dev/null 2>&1
 done
 
-echo "📊 Comparing proofs for determinism..."
+echo " Comparing proofs for determinism..."
 if [ -f "gkr_attacks/proofs/deterministic_1/gkr_proof.bin" ] && [ -f "gkr_attacks/proofs/deterministic_2/gkr_proof.bin" ]; then
     if cmp -s gkr_attacks/proofs/deterministic_1/gkr_proof.bin gkr_attacks/proofs/deterministic_2/gkr_proof.bin; then
-        echo -e "${YELLOW}⚠️  Identical proofs generated (deterministic)${NC}"
+        "
         echo "   This could allow challenge prediction attacks"
         echo "   However, this is expected behavior for Fiat-Shamir transcripts"
     else
-        echo -e "${GREEN}✅ Different proofs generated (non-deterministic)${NC}"
+        "
         echo "   Challenge generation includes genuine randomness"
     fi
 
@@ -307,19 +294,19 @@ if [ -f "gkr_attacks/proofs/deterministic_1/gkr_proof.bin" ] && [ -f "gkr_attack
     if cmp -s gkr_attacks/proofs/deterministic_1/public.json gkr_attacks/proofs/deterministic_2/public.json; then
         echo "   Public inputs are identical (expected)"
     else
-        echo "🚨 Public inputs differ despite identical setup!"
+        echo " Public inputs differ despite identical setup!"
     fi
 else
-    echo "❌ Failed to generate deterministic test proofs"
+    echo " Failed to generate deterministic test proofs"
 fi
 
 section "6" "MASSIVE SCALE ATTACK"
 
-echo "🎯 TARGET: System stability under extreme load"
-echo "🔬 TECHNIQUE: Testing with largest possible matrix dimensions"
+echo " TARGET: System stability under extreme load"
+echo " TECHNIQUE: Testing with largest possible matrix dimensions"
 echo ""
 
-echo "🔧 Testing with maximum feasible matrix size..."
+echo " Testing with maximum feasible matrix size..."
 
 # Test with large matrix (within reason for CI)
 large_k=8192  # 8K should be manageable
@@ -343,7 +330,7 @@ with open('gkr_attacks/data/large_input.json', 'w') as f:
 print(f"Generated large matrix: {m}×{k} = {m*k} elements")
 EOF
 
-echo "🚨 Testing large scale proof generation..."
+echo " Testing large scale proof generation..."
 start_time=$(date +%s)
 
 if timeout 120 ./target/release/nova_poc prove \
@@ -355,7 +342,7 @@ if timeout 120 ./target/release/nova_poc prove \
     end_time=$(date +%s)
     duration=$((end_time - start_time))
 
-    echo "✅ Large scale proof generated in ${duration}s"
+    echo " Large scale proof generated in ${duration}s"
 
     # Test verification
     verify_start=$(date +%s)
@@ -366,26 +353,26 @@ if timeout 120 ./target/release/nova_poc prove \
         verify_end=$(date +%s)
         verify_duration=$((verify_end - verify_start))
 
-        echo "✅ Large scale proof verified in ${verify_duration}s"
+        echo " Large scale proof verified in ${verify_duration}s"
         echo "   System handles large scale operations correctly"
     else
         attack_result 0 "Large scale verification failed!"
     fi
 else
-    echo -e "${YELLOW}⚠️  Large scale proof generation timed out or failed${NC}"
+    "
     echo "   This is acceptable behavior for very large matrices"
 fi
 
 section "FINAL" "COORDINATED MULTI-ATTACK"
 
-echo "🎯 TARGET: Overall system resilience"
-echo "🔬 TECHNIQUE: Simultaneous multi-vector attack"
+echo " TARGET: Overall system resilience"
+echo " TECHNIQUE: Simultaneous multi-vector attack"
 echo ""
 
-echo "⚔️  Launching coordinated attack using all discovered techniques..."
+echo "  Launching coordinated attack using all discovered techniques..."
 
 # Create a proof that combines multiple attack vectors
-echo "🔧 Creating hybrid attack proof..."
+echo " Creating hybrid attack proof..."
 
 # Use extreme values + large scale + specific salt
 python3 << 'EOF'
@@ -423,56 +410,56 @@ for i in range(k):
 with open('gkr_attacks/data/hybrid_attack_input.json', 'w') as f:
     json.dump(attack_input, f)
 
-print("✅ Created hybrid attack matrix with extreme values and patterns")
+print(" Created hybrid attack matrix with extreme values and patterns")
 EOF
 
-echo "🚨 Testing hybrid attack proof..."
+echo " Testing hybrid attack proof..."
 if ./target/release/nova_poc prove \
     --weights1-path gkr_attacks/data/hybrid_attack_weights.bin \
     --x0-path gkr_attacks/data/hybrid_attack_input.json \
     --m 16 --k 2048 --salt "HYBRID_ATTACK_VECTOR" \
     --out-dir gkr_attacks/proofs/hybrid > /dev/null 2>&1; then
 
-    echo "⚠️  Hybrid attack proof generated"
+    echo "  Hybrid attack proof generated"
 
     if ./target/release/nova_poc verify \
         --proof-path gkr_attacks/proofs/hybrid/gkr_proof.bin \
         --public-path gkr_attacks/proofs/hybrid/public.json > /dev/null 2>&1; then
 
-        echo -e "${GREEN}✅ Hybrid attack proof verified correctly${NC}"
+        "
         echo "   System maintains integrity under combined attack vectors"
     else
         attack_result 0 "Hybrid attack caused verification failure!"
     fi
 else
-    echo -e "${YELLOW}⚠️  Hybrid attack proof generation failed${NC}"
+    "
     echo "   System rejected malicious input patterns (good defense)"
 fi
 
 echo ""
-echo "🎉 GKR STRESS TEST COMPLETE!"
+echo " GKR STRESS TEST COMPLETE!"
 echo ""
-echo -e "${GREEN}🛡️  COMPREHENSIVE ATTACK RESISTANCE VERIFIED:${NC}"
-echo "✅ Binary corruption attacks detected and blocked"
-echo "✅ Proof substitution attacks prevented by consistency checks"
-echo "✅ Field overflow attacks handled correctly"
-echo "✅ Zero-knowledge property maintained across multiple proofs"
-echo "✅ Challenge generation remains cryptographically secure"
-echo "✅ Large scale operations handled efficiently"
-echo "✅ Coordinated multi-vector attacks successfully repelled"
+"
+echo " Binary corruption attacks detected and blocked"
+echo " Proof substitution attacks prevented by consistency checks"
+echo " Field overflow attacks handled correctly"
+echo " Zero-knowledge property maintained across multiple proofs"
+echo " Challenge generation remains cryptographically secure"
+echo " Large scale operations handled efficiently"
+echo " Coordinated multi-vector attacks successfully repelled"
 echo ""
-echo -e "${BLUE}🔍 KEY FINDINGS:${NC}"
+"
 echo "   • GKR verifier demonstrates robust defense against sophisticated attacks"
 echo "   • Mathematical foundations resist advanced manipulation attempts"
 echo "   • Cryptographic properties remain intact under extreme conditions"
 echo "   • System scales efficiently while maintaining security"
 echo "   • Multiple attack vectors cannot compromise verification integrity"
 echo ""
-echo -e "${PURPLE}🔐 SECURITY VERDICT:${NC}"
-echo -e "${GREEN}The GKR verifier has successfully withstood comprehensive stress testing${NC}"
-echo -e "${GREEN}and demonstrated exceptional resilience against advanced attack scenarios.${NC}"
+"
+"
+"
 
 # Cleanup
 echo ""
-echo "🧹 Cleaning up attack artifacts..."
+echo " Cleaning up attack artifacts..."
 rm -rf gkr_attacks/

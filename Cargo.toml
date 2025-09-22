@@ -1,3 +1,3 @@
 [workspace]
-members = ["circuit", "engine", "nova_poc", "zk_gkr"]
+members = ["circuit", "nova_poc", "zk_gkr"]
 resolver = "2"

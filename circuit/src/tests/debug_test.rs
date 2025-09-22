@@ -1,4 +1,5 @@
-use super::*;
+use crate::*;
+use ark_bn254::Fr;
 use ark_relations::r1cs::ConstraintSystem;
 
 #[test]
