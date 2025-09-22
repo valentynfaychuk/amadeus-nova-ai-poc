@@ -10,6 +10,8 @@ mod formats;
 
 use cli::*;
 
+mod gkr;
+
 #[derive(Parser)]
 #[command(name = "nova_poc")]
 #[command(about = "Nova POC: Freivalds + GEMV + Tiny Groth16")]
@@ -34,6 +36,10 @@ enum Commands {
         #[arg(long, default_value = "42")]
         seed: u64,
     },
+    /// Generate GKR proof for matrix-vector multiplication
+    ProveGkr(ProveGkrArgs),
+    /// Verify GKR proof
+    VerifyGkr(VerifyGkrArgs),
 }
 
 fn main() -> Result<()> {
@@ -45,5 +51,7 @@ fn main() -> Result<()> {
         Commands::Verify(args) => verify::run_verify(args),
         Commands::Setup(args) => prove::run_setup(args),
         Commands::Demo { seed } => demo::run_demo(seed),
+        Commands::ProveGkr(args) => gkr::run_prove_gkr(args),
+        Commands::VerifyGkr(args) => gkr::run_verify_gkr(args),
     }
 }

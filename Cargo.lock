@@ -630,6 +630,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "zk_gkr",
 ]
 
 [[package]]
@@ -1156,4 +1157,21 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.106",
+]
+
+[[package]]
+name = "zk_gkr"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ark-bn254",
+ "ark-crypto-primitives",
+ "ark-ff",
+ "ark-serialize",
+ "ark-std",
+ "hex",
+ "rand",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]

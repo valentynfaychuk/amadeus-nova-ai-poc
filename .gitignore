@@ -2,5 +2,8 @@ target
 out
 keys
 data
+bench
 *.local
 *.json
+.bench_runs
+.idea

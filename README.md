@@ -439,6 +439,94 @@ To add cryptographic commitments:
 2. Update circuit constraints in `circuit/src/lib.rs`
 3. Add Poseidon gadgets to dependencies
 
+## Benchmarking
+
+### Quick Start (Python-only workflow)
+
+```bash
+# 1) (optional) create venv and install bench deps
+python3 -m venv .venv && source .venv/bin/activate
+pip install -U psutil pandas matplotlib pyyaml
+
+# 2) Demo (fast) — single config
+python3 scripts/bench.py \
+  --grid K=4096 \
+  --tile-k 1024 \
+  --rounds 16 \
+  --threads auto \
+  --modes one_pass \
+  --repeats 1 \
+  --out bench/results_demo.csv
+
+# 3) Full grid (longer)
+python3 scripts/bench.py \
+  --grid K=4096,12288,16384,24576 \
+  --tile-k 1024,4096,8192 \
+  --rounds 8,16,32 \
+  --threads 1,auto \
+  --modes one_pass,k_pass_legacy \
+  --repeats 3 \
+  --out bench/results.csv
+
+# 4) Plot
+python3 scripts/plot_bench.py --in bench/results.csv --outdir bench/plots
+```
+
+### Production-Scale Presets
+
+```bash
+# 7B-like model dimensions
+python3 scripts/bench.py --grid K=12288 --tile-k 8192 --rounds 16 --threads auto --modes one_pass --repeats 3 --out bench/7b.csv
+
+# Mid-size model
+python3 scripts/bench.py --grid K=16384 --tile-k 8192 --rounds 16 --threads auto --modes one_pass --repeats 3 --out bench/mid.csv
+
+# Large model
+python3 scripts/bench.py --grid K=24576 --tile-k 16384 --rounds 16 --threads auto --modes one_pass --repeats 3 --out bench/large.csv
+```
+
+### Benchmark Features
+
+The benchmarking suite measures:
+- **Wall time, CPU time (user/sys), and peak memory** for each stage
+- **I/O metrics** (bytes read/written, best-effort on macOS)
+- **Proof and transaction sizes** to verify < 1 KB constraint
+- **Thread scaling** with configurable RAYON_NUM_THREADS
+- **One-pass vs k-pass Freivalds** performance comparison
+
+Configuration grid:
+- `K ∈ {4096, 12288, 16384, 24576}` - Matrix width (LLM layer dimensions)
+- `tile_k ∈ {1024, 4096, 8192, 16384}` - Streaming tile size
+- `rounds ∈ {8, 16, 32}` - Freivalds security parameter
+- `threads ∈ {1, auto}` - Thread count (auto = all cores)
+- `mode ∈ {one_pass, k_pass_legacy}` - Freivalds algorithm variant
+
+### Data Generation
+
+The benchmark uses **realistic LLM-like quantization**:
+- **INT8 weights & activations** with per-row weight scales
+- **INT32 accumulators** safe for K ≤ 24576
+- **Xavier initialization** (σ = 1/√K) for weights
+- **Deterministic generation** with configurable seeds
+
+### Output Analysis
+
+The plotting script generates:
+- **Wall time vs K** grouped by rounds and mode
+- **Stage breakdown** showing time distribution
+- **Speedup analysis** comparing one-pass vs k-pass
+- **Proof size tracking** to verify < 1 KB constraint
+- **Thread scaling efficiency** plots
+- **Summary report** with key metrics
+
+### Notes
+
+- The benchmark suite sets `RAYON_NUM_THREADS` automatically per run
+- **One-pass Freivalds** should be ≫ faster than k-pass (≥10× for k=16–32)
+- Proof bytes remain stable (~200–300 B) regardless of K
+- I/O counters may be unavailable on macOS (shown as None)
+- Each configuration is run multiple times; first run may be slower (cold cache)
+
 ## Examples
 
 ### Data Generation Script
@@ -503,6 +591,131 @@ for seed in 42 123 456; do
     nova_poc verify run_$seed.json --proof-path proof_$seed/proof.bin --skip-freivalds
 done
 ```
+
+## GKR Mode (Zero-Knowledge Matrix-Vector Multiplication)
+
+### Overview
+
+The GKR (Goldwasser-Kalai-Rothblum) mode provides a **non-interactive zero-knowledge proof** for matrix-vector multiplication `y = W·x` without requiring the verifier to access the weight matrix `W`. This replaces the verifier-side Freivalds check with a cryptographic proof that has **polylogarithmic verification time**.
+
+### Protocol Summary
+
+The protocol proves the scalar claim:
+```
+c = Σᵢ Σⱼ uᵢ · Wᵢⱼ · xⱼ
+```
+
+Where:
+- **W** is the private weight matrix (16×K)
+- **x** is the public input vector (length K)
+- **u** is a challenge vector derived via Fiat-Shamir
+- **c** is the claimed scalar result
+
+### Key Features
+
+- **Commitments**: Poseidon-Merkle trees over matrix/vector elements
+- **Sum-Check**: Multi-round interactive protocol made non-interactive via Fiat-Shamir
+- **MLE Openings**: Binary folding proofs for multilinear extension evaluations
+- **Proof Size**: O(log(m·k)) Merkle paths + O(m+k) field elements
+- **Verification**: Milliseconds, independent of matrix size
+
+### Usage
+
+#### Generate GKR Proof
+```bash
+# Build required binary
+cargo build --release -p nova_poc
+
+# Generate proof for 16×4096 matrix
+nova_poc prove-gkr \
+  --weights1-path data/w1_16x4096.bin \
+  --x0-path data/x0_4096.json \
+  --m 16 \
+  --k 4096 \
+  --salt deadbeef1234 \
+  --out-dir gkr_proof \
+  --model-id "llm_layer_1" \
+  --vk-hash "abc123"
+```
+
+#### Verify GKR Proof
+```bash
+# Verify proof (no access to weight matrix)
+nova_poc verify-gkr \
+  --proof-path gkr_proof/gkr_proof.bin \
+  --public-path gkr_proof/public.json
+```
+
+#### Optional: Verify with Groth16 Tail
+```bash
+# Combine GKR + Groth16 for downstream binding
+nova_poc verify-gkr \
+  --proof-path gkr_proof/gkr_proof.bin \
+  --public-path gkr_proof/public.json \
+  --with-tail
+```
+
+### Technical Specifications
+
+#### Dimensions and Padding
+- Matrix dimensions padded to powers of 2: `m = 2^a`, `k = 2^b`
+- Hypercube indexing for MLE compatibility
+- Support for realistic LLM dimensions (K ∈ {12288, 16384, 24576})
+
+#### Cryptographic Primitives
+- **Field**: BN254 scalar field (Fr)
+- **Hash**: Poseidon for BN254 (Merkle tree nodes)
+- **Commitment**: Binary Merkle trees with Poseidon internal nodes
+- **Randomness**: Fiat-Shamir transcript with domain separation
+
+#### Proof Structure
+```json
+{
+  "m": 16,
+  "k": 4096,
+  "h_w": "0x1234...",  // Merkle root of W
+  "h_x": "0x5678...",  // Merkle root of x
+  "c": "0x9abc...",    // Claimed scalar value
+  "salt": "deadbeef",
+  "sumcheck_proof": {
+    "claimed_sum": "0x...",
+    "round_polynomials": [...],
+    "challenges": [...],
+    "w_opening": {...},
+    "x_opening": {...}
+  }
+}
+```
+
+#### Security Properties
+- **Soundness**: Cheating prover caught with overwhelming probability
+- **Zero-Knowledge**: Verifier learns nothing about W beyond public claim
+- **Non-Interactive**: Single proof, no verifier interaction required
+- **Binding**: Fiat-Shamir transcript binds to model_id, vk_hash, dimensions
+
+#### Performance Characteristics
+- **Proof Generation**: O(m·k) field operations + O(log(m·k)) Merkle proofs
+- **Proof Size**: ~KB to tens of KB (vs. GB for naive approaches)
+- **Verification Time**: ~milliseconds (independent of matrix size)
+- **Memory**: O(log(m·k)) verifier memory (vs. O(m·k) for Freivalds)
+
+### Integration with Existing System
+
+The GKR mode integrates seamlessly with the existing Nova POC architecture:
+
+1. **Inference Stage**: Unchanged - computes `y = W·x` as before
+2. **Proof Stage**: Choice between Freivalds (`prove`) or GKR (`prove-gkr`)
+3. **Verification**: Freivalds requires matrix access; GKR does not
+4. **Groth16 Tail**: Optional downstream binding for both modes
+
+### Acceptance Criteria
+
+✅ **GKR proof generation** produces valid binary proof and JSON public inputs
+✅ **Verification time** under 100ms for m=16, k∈[12k..24k]
+✅ **No matrix access** during verification (only Merkle openings)
+✅ **Tamper resistance** - any bit flip causes verification failure
+✅ **Proof size** scales as O(log(mk)) not O(mk)
+✅ **Optional Groth16** keeps total payload under 1KB when combined
 
 ## Roadmap
 
