@@ -33,6 +33,22 @@ pub struct ProveGkrArgs {
     /// Optional verification key hash
     #[arg(long)]
     pub vk_hash: Option<String>,
+
+    /// Enable accelerated backend (requires --features accel)
+    #[arg(long)]
+    pub accel: bool,
+
+    /// Acceleration backend type (cpu_avx, cuda)
+    #[arg(long, default_value = "cpu_avx")]
+    pub accel_backend: String,
+
+    /// GPU device ID for CUDA backend
+    #[arg(long, default_value = "0")]
+    pub accel_device_id: u32,
+
+    /// Number of threads for CPU backend
+    #[arg(long)]
+    pub accel_threads: Option<usize>,
 }
 
 #[derive(Args)]

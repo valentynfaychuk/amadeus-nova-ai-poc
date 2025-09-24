@@ -11,10 +11,25 @@ use zk_gkr::sumcheck::{SumCheckProver, SumCheckVerifier};
 use zk_gkr::transcript::FiatShamirTranscript;
 use zk_gkr::Fr;
 
+#[cfg(feature = "accel")]
+use zk_gkr_accel::{create_context, BackendType, ComputeConfig};
+
 /// Run GKR proof generation
 pub fn run_prove_gkr(args: ProveGkrArgs) -> Result<()> {
     println!("🔐 Starting GKR proof generation...");
     println!("   Matrix dimensions: {}×{}", args.m, args.k);
+
+    // Check if acceleration is requested
+    #[cfg(feature = "accel")]
+    if args.accel {
+        return run_prove_gkr_accelerated(args);
+    }
+
+    #[cfg(not(feature = "accel"))]
+    if args.accel {
+        println!("⚠️  Acceleration requested but not compiled with --features accel");
+        println!("   Falling back to standard GKR implementation");
+    }
 
     // Create output directory
     fs::create_dir_all(&args.out_dir)?;
@@ -348,6 +363,10 @@ pub fn run_demo(seed: u64, m: usize, k: usize) -> Result<()> {
         out_dir: temp_dir.join("proof"),
         model_id: Some(format!("demo_{}x{}", m, k)),
         vk_hash: Some("demo".to_string()),
+        accel: false,
+        accel_backend: "cpu_avx".to_string(),
+        accel_device_id: 0,
+        accel_threads: None,
     };
 
     let start_time = std::time::Instant::now();
@@ -433,6 +452,10 @@ pub fn run_benchmark(sizes_str: String, repeats: usize, output_path: String) -> 
                 out_dir: run_dir.join("proof"),
                 model_id: Some(format!("bench_{}x{}", m, k)),
                 vk_hash: Some("benchmark".to_string()),
+                accel: false,
+                accel_backend: "cpu_avx".to_string(),
+                accel_device_id: 0,
+                accel_threads: None,
             };
 
             let memory_before = get_memory_usage();
@@ -548,4 +571,153 @@ fn get_memory_usage() -> usize {
 
     // Fallback for non-Linux systems
     0
+}
+
+#[cfg(feature = "accel")]
+fn run_prove_gkr_accelerated(args: ProveGkrArgs) -> Result<()> {
+    use std::time::Instant;
+
+    println!("🚀 Using accelerated GKR backend: {}", args.accel_backend);
+
+    // Create output directory
+    fs::create_dir_all(&args.out_dir)?;
+
+    // Load and convert data
+    println!("📂 Loading data...");
+    let w_matrix = load_weights_matrix(&args.weights1_path, args.m, args.k)?;
+    let x_vector = load_x_vector(&args.x0_path, args.k)?;
+
+    // Convert to field elements
+    let w_fr = matrix_i16_to_fr(&w_matrix);
+    let x_fr = vector_i16_to_fr(&x_vector);
+
+    // Configure acceleration backend
+    let backend_type = match args.accel_backend.as_str() {
+        "cpu_avx" => BackendType::CpuAvx,
+        "cuda" => BackendType::Cuda,
+        _ => {
+            println!("⚠️  Unknown backend '{}', falling back to cpu_avx", args.accel_backend);
+            BackendType::CpuAvx
+        }
+    };
+
+    let config = ComputeConfig {
+        backend: backend_type,
+        device_id: Some(args.accel_device_id),
+        num_threads: args.accel_threads,
+        memory_limit: None,
+    };
+
+    // Create accelerated context
+    println!("⚙️  Initializing {} backend...", args.accel_backend);
+    let mut context = create_context(config)
+        .map_err(|e| anyhow::anyhow!("Failed to create acceleration context: {}", e))?;
+
+    println!("   Backend: {}", context.backend().name());
+    if context.backend().is_available() {
+        println!("   ✅ Backend is available and ready");
+    } else {
+        return Err(anyhow::anyhow!("Backend is not available on this system"));
+    }
+
+    // Generate proof using accelerated backend
+    println!("⚡ Generating accelerated proof...");
+    let start_time = Instant::now();
+
+    let proof_result = context.compute_and_prove(&w_fr, &x_fr, &args.salt)
+        .map_err(|e| anyhow::anyhow!("Accelerated proof generation failed: {}", e))?;
+
+    let total_time = start_time.elapsed();
+
+    println!("✅ Accelerated proof generated in {:.2}s", total_time.as_secs_f64());
+    println!("   Proof size: {} bytes", proof_result.proof.len());
+    println!("   Backend time: {}ms", proof_result.proof_time_ms);
+
+    if let Some(memory_mb) = proof_result.memory_usage_mb {
+        println!("   Memory usage: {:.1}MB", memory_mb);
+    }
+
+    // Save accelerated proof
+    let proof_path = args.out_dir.join("gkr_proof_accel.bin");
+    fs::write(&proof_path, &proof_result.proof)?;
+    println!("💾 Accelerated proof saved to: {:?}", proof_path);
+
+    // Save public inputs - using a simplified approach for acceleration
+    // In a real implementation, these would be the actual merkle roots and claimed value
+    let h_w = Fr::from(1u64); // Placeholder for actual merkle root
+    let h_x = Fr::from(2u64); // Placeholder for actual merkle root
+    let c = if !proof_result.public_inputs.is_empty() {
+        proof_result.public_inputs[args.k] // First element of the output
+    } else {
+        Fr::from(0u64)
+    }; // Claimed value
+
+    let public_inputs = GkrPublicInputs {
+        m: args.m,
+        k: args.k,
+        h_w,
+        h_x,
+        c,
+        model_id: args.model_id.clone(),
+        vk_hash: args.vk_hash.clone(),
+        salt: args.salt.clone(),
+    };
+
+    let public_path = args.out_dir.join("public_accel.json");
+    // Manual JSON serialization to avoid serde issues
+    let public_json = format!(
+        r#"{{
+  "m": {},
+  "k": {},
+  "h_w": "{}",
+  "h_x": "{}",
+  "c": "{}",
+  "model_id": {:?},
+  "vk_hash": {:?},
+  "salt": "{}"
+}}"#,
+        public_inputs.m,
+        public_inputs.k,
+        field_to_hex(&public_inputs.h_w),
+        field_to_hex(&public_inputs.h_x),
+        field_to_hex(&public_inputs.c),
+        public_inputs.model_id,
+        public_inputs.vk_hash,
+        public_inputs.salt
+    );
+    fs::write(&public_path, public_json)?;
+    println!("💾 Public inputs saved to: {:?}", public_path);
+
+    // Verify the accelerated proof
+    println!("🔍 Verifying accelerated proof...");
+    let verify_start = Instant::now();
+
+    let is_valid = context.verify_proof(&proof_result.proof, &proof_result.public_inputs, &args.salt)
+        .map_err(|e| anyhow::anyhow!("Accelerated proof verification failed: {}", e))?;
+
+    let verify_time = verify_start.elapsed();
+
+    if is_valid {
+        println!("✅ Accelerated proof verified successfully in {:.2}ms", verify_time.as_secs_f64() * 1000.0);
+    } else {
+        return Err(anyhow::anyhow!("Accelerated proof verification failed"));
+    }
+
+    // Save benchmark data
+    let benchmark_path = args.out_dir.join("accel_benchmark.json");
+    let benchmark_data = serde_json::json!({
+        "backend": args.accel_backend,
+        "backend_name": context.backend().name(),
+        "matrix_size": [args.m, args.k],
+        "proof_time_ms": proof_result.proof_time_ms,
+        "verify_time_ms": verify_time.as_millis(),
+        "total_time_ms": total_time.as_millis(),
+        "proof_size_bytes": proof_result.proof.len(),
+        "memory_usage_mb": proof_result.memory_usage_mb,
+    });
+
+    fs::write(&benchmark_path, serde_json::to_string_pretty(&benchmark_data)?)?;
+    println!("📊 Benchmark data saved to: {:?}", benchmark_path);
+
+    Ok(())
 }

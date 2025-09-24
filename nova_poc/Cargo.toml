@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 zk_gkr = { path = "../zk_gkr" }
+zk_gkr_accel = { path = "../zk_gkr_accel", optional = true }
 ark-bn254 = "0.4"
 ark-ec = "0.4"
 ark-ff = "0.4"
@@ -32,3 +33,10 @@ chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
 tempfile = "3.0"
+
+[features]
+default = []
+accel = ["zk_gkr_accel"]
+accel_cpu_avx = ["accel", "zk_gkr_accel/cpu_avx"]
+accel_cuda = ["accel", "zk_gkr_accel/cuda"]
+accel_all = ["accel", "zk_gkr_accel/all_backends"]
