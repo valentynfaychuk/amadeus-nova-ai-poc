@@ -109,6 +109,26 @@ Check available backends programmatically:
 
 See [`ANALYSIS.md`](ANALYSIS.md) for detailed security analysis.
 
+## Advanced Benchmarking
+
+For comprehensive performance analysis with visualization:
+
+```bash
+# Standard benchmark with plots
+python3 scripts/benchmark.py --sizes 4096,8192,16384 --repeats 3
+
+# CPU AVX2/AVX-512 accelerated benchmark
+python3 scripts/benchmark.py --avx --sizes 4096,8192,16384 --repeats 3
+
+# CUDA GPU accelerated benchmark
+python3 scripts/benchmark.py --cuda --sizes 4096,8192,16384 --repeats 3
+```
+
+The benchmark script generates:
+- **CSV data**: Raw timing and performance metrics
+- **PNG plots**: Comprehensive performance visualization with baseline comparison
+- **Overhead analysis**: Shows ZK proving cost vs pure matrix multiplication
+
 ## Scripts
 
 See [`scripts/README.md`](scripts/README.md) for details about scripts.

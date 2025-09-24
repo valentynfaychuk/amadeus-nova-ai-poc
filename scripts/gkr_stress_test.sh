@@ -3,6 +3,75 @@
 
 set -e
 
+# Default values
+ACCEL_MODE=""
+ACCEL_BACKEND="cpu_avx"
+ACCEL_DEVICE_ID="0"
+ACCEL_THREADS=""
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --avx)
+            ACCEL_MODE="--accel --accel-backend cpu_avx"
+            if [[ -n "$2" && "$2" =~ ^[0-9]+$ ]]; then
+                ACCEL_MODE="$ACCEL_MODE --accel-threads $2"
+                shift
+            fi
+            echo "🚀 Using CPU AVX2/AVX-512 acceleration for stress testing"
+            shift
+            ;;
+        --cuda)
+            ACCEL_MODE="--accel --accel-backend cuda"
+            if [[ -n "$2" && "$2" =~ ^[0-9]+$ ]]; then
+                ACCEL_MODE="$ACCEL_MODE --accel-device-id $2"
+                shift
+            fi
+            echo "🚀 Using CUDA GPU acceleration for stress testing"
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Advanced stress testing suite for GKR zero-knowledge proof system"
+            echo ""
+            echo "Options:"
+            echo "  --avx [THREADS]    Use CPU AVX2/AVX-512 acceleration (optional thread count)"
+            echo "  --cuda [DEVICE]    Use CUDA GPU acceleration (optional device ID)"
+            echo "  --help, -h         Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0                 # Standard stress testing"
+            echo "  $0 --avx           # CPU AVX accelerated stress testing"
+            echo "  $0 --avx 8         # CPU AVX with 8 threads"
+            echo "  $0 --cuda          # CUDA GPU accelerated stress testing"
+            echo "  $0 --cuda 1        # CUDA on GPU device 1"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Set file naming based on acceleration mode
+if [[ -n "$ACCEL_MODE" ]]; then
+    PROOF_FILE="gkr_proof_accel.bin"
+    PUBLIC_FILE="public_accel.json"
+    echo "🔍 Stress testing accelerated proof system"
+    echo ""
+    echo "⚠️  IMPORTANT NOTE: Accelerated verification uses simplified validation"
+    echo "    This stress tests accelerated proving performance and security,"
+    echo "    but verification stress testing is limited in accelerated mode."
+    echo ""
+else
+    PROOF_FILE="gkr_proof.bin"
+    PUBLIC_FILE="public.json"
+    echo "🔍 Stress testing standard proof system"
+fi
+
 echo "GKR STRESS TEST"
 echo "==============="
 
@@ -93,12 +162,16 @@ echo -e "${CYAN}Generating proof using created test data...${NC}"
     --weights1-path gkr_attacks/data/weights.bin \
     --x0-path gkr_attacks/data/input.json \
     --m 16 --k 1024 \
-    --out-dir gkr_attacks/data
+    --out-dir gkr_attacks/data \
+    $ACCEL_MODE
 
-if [ -f "gkr_attacks/data/gkr_proof.bin" ] && [ -f "gkr_attacks/data/public.json" ]; then
-    cp "gkr_attacks/data/gkr_proof.bin" "gkr_attacks/data/original_proof.bin"
-    cp "gkr_attacks/data/public.json" "gkr_attacks/data/original_public.json"
+if [ -f "gkr_attacks/data/$PROOF_FILE" ] && [ -f "gkr_attacks/data/$PUBLIC_FILE" ]; then
+    cp "gkr_attacks/data/$PROOF_FILE" "gkr_attacks/data/original_proof.bin"
+    cp "gkr_attacks/data/$PUBLIC_FILE" "gkr_attacks/data/original_public.json"
     echo -e "${GREEN}Baseline proof generated and copied successfully${NC}"
+    if [[ -n "$ACCEL_MODE" ]]; then
+        echo "   Using acceleration: $(echo $ACCEL_MODE | cut -d' ' -f3)"
+    fi
 else
     echo -e "${RED}Failed to generate baseline proof${NC}"
     exit 1
@@ -208,11 +281,12 @@ python3 create_test_data2.py
     --weights1-path gkr_attacks/data/weights2.bin \
     --x0-path gkr_attacks/data/input2.json \
     --m 16 --k 1024 \
-    --out-dir gkr_attacks/data2 > /dev/null 2>&1
+    --out-dir gkr_attacks/data2 \
+    $ACCEL_MODE > /dev/null 2>&1
 
 mkdir -p gkr_attacks/data2
-if [ -f "gkr_attacks/data2/gkr_proof.bin" ]; then
-    cp "gkr_attacks/data2/gkr_proof.bin" gkr_attacks/data/proof_for_substitution.bin
+if [ -f "gkr_attacks/data2/$PROOF_FILE" ]; then
+    cp "gkr_attacks/data2/$PROOF_FILE" gkr_attacks/data/proof_for_substitution.bin
     echo -e "${GREEN}Second proof generated successfully${NC}"
 else
     echo -e "${YELLOW}Failed to generate second proof, using first proof instead${NC}"
@@ -286,13 +360,14 @@ if ./target/release/nova_poc prove \
     --weights1-path gkr_attacks/data/extreme_weights.bin \
     --x0-path gkr_attacks/data/extreme_input.json \
     --m 16 --k 1024 \
-    --out-dir gkr_attacks/proofs/extreme > /dev/null 2>&1; then
+    --out-dir gkr_attacks/proofs/extreme \
+    $ACCEL_MODE > /dev/null 2>&1; then
 
     echo -e "${GREEN}Extreme value proof generation succeeded${NC}"
 
     if ./target/release/nova_poc verify \
-        --proof-path gkr_attacks/proofs/extreme/gkr_proof.bin \
-        --public-path gkr_attacks/proofs/extreme/public.json > /dev/null 2>&1; then
+        --proof-path gkr_attacks/proofs/extreme/$PROOF_FILE \
+        --public-path gkr_attacks/proofs/extreme/$PUBLIC_FILE > /dev/null 2>&1; then
         echo -e "${GREEN}System handles field overflow correctly${NC}"
         echo -e "${GREEN}DEFENSE SUCCESSFUL: Field overflow attack failed - system handled extreme values correctly${NC}"
     else
@@ -339,14 +414,15 @@ EOF
         --weights1-path gkr_attacks/data/weights_${i}.bin \
         --x0-path gkr_attacks/data/input_${i}.json \
         --m 16 --k 1024 --salt "zk_test_${i}" \
-        --out-dir gkr_attacks/proofs/zk_${i} > /dev/null 2>&1
+        --out-dir gkr_attacks/proofs/zk_${i} \
+        $ACCEL_MODE > /dev/null 2>&1
 done
 
 echo -e "${CYAN}Analyzing proof sizes for information leakage...${NC}"
 proof_sizes=""
 for i in 1 2 3; do
-    if [ -f "gkr_attacks/proofs/zk_${i}/gkr_proof.bin" ]; then
-        size=$(stat -f%z "gkr_attacks/proofs/zk_${i}/gkr_proof.bin" 2>/dev/null || stat -c%s "gkr_attacks/proofs/zk_${i}/gkr_proof.bin" 2>/dev/null)
+    if [ -f "gkr_attacks/proofs/zk_${i}/$PROOF_FILE" ]; then
+        size=$(stat -f%z "gkr_attacks/proofs/zk_${i}/$PROOF_FILE" 2>/dev/null || stat -c%s "gkr_attacks/proofs/zk_${i}/$PROOF_FILE" 2>/dev/null)
         proof_sizes="$proof_sizes $size"
         echo -e "   ${CYAN}Proof $i size: $size bytes${NC}"
     fi
@@ -396,12 +472,13 @@ for run in 1 2; do
         --weights1-path gkr_attacks/data/weights_1.bin \
         --x0-path gkr_attacks/data/input_1.json \
         --m 16 --k 1024 --salt "deterministic_test" \
-        --out-dir gkr_attacks/proofs/deterministic_${run} > /dev/null 2>&1
+        --out-dir gkr_attacks/proofs/deterministic_${run} \
+        $ACCEL_MODE > /dev/null 2>&1
 done
 
 echo -e "${CYAN}Comparing proofs for determinism...${NC}"
-if [ -f "gkr_attacks/proofs/deterministic_1/gkr_proof.bin" ] && [ -f "gkr_attacks/proofs/deterministic_2/gkr_proof.bin" ]; then
-    if cmp -s gkr_attacks/proofs/deterministic_1/gkr_proof.bin gkr_attacks/proofs/deterministic_2/gkr_proof.bin; then
+if [ -f "gkr_attacks/proofs/deterministic_1/$PROOF_FILE" ] && [ -f "gkr_attacks/proofs/deterministic_2/$PROOF_FILE" ]; then
+    if cmp -s gkr_attacks/proofs/deterministic_1/$PROOF_FILE gkr_attacks/proofs/deterministic_2/$PROOF_FILE; then
         echo -e "${YELLOW}Proofs are identical${NC}"
         echo -e "${YELLOW}This could allow challenge prediction attacks${NC}"
         echo -e "${YELLOW}However, this is expected behavior for Fiat-Shamir transcripts${NC}"
@@ -411,7 +488,7 @@ if [ -f "gkr_attacks/proofs/deterministic_1/gkr_proof.bin" ] && [ -f "gkr_attack
     fi
 
     # Compare public inputs too
-    if cmp -s gkr_attacks/proofs/deterministic_1/public.json gkr_attacks/proofs/deterministic_2/public.json; then
+    if cmp -s gkr_attacks/proofs/deterministic_1/$PUBLIC_FILE gkr_attacks/proofs/deterministic_2/$PUBLIC_FILE; then
         echo -e "${GREEN}Public inputs are identical (expected)${NC}"
     else
         echo -e "${RED}Public inputs differ despite identical setup!${NC}"
@@ -457,7 +534,8 @@ if timeout 120 ./target/release/nova_poc prove \
     --weights1-path gkr_attacks/data/large_weights.bin \
     --x0-path gkr_attacks/data/large_input.json \
     --m 16 --k $large_k \
-    --out-dir gkr_attacks/proofs/large > /dev/null 2>&1; then
+    --out-dir gkr_attacks/proofs/large \
+    $ACCEL_MODE > /dev/null 2>&1; then
 
     end_time=$(date +%s)
     duration=$((end_time - start_time))
@@ -467,8 +545,8 @@ if timeout 120 ./target/release/nova_poc prove \
     # Test verification
     verify_start=$(date +%s)
     if ./target/release/nova_poc verify \
-        --proof-path gkr_attacks/proofs/large/gkr_proof.bin \
-        --public-path gkr_attacks/proofs/large/public.json > /dev/null 2>&1; then
+        --proof-path gkr_attacks/proofs/large/$PROOF_FILE \
+        --public-path gkr_attacks/proofs/large/$PUBLIC_FILE > /dev/null 2>&1; then
 
         verify_end=$(date +%s)
         verify_duration=$((verify_end - verify_start))
@@ -540,13 +618,14 @@ if ./target/release/nova_poc prove \
     --weights1-path gkr_attacks/data/hybrid_attack_weights.bin \
     --x0-path gkr_attacks/data/hybrid_attack_input.json \
     --m 16 --k 2048 --salt "HYBRID_ATTACK_VECTOR" \
-    --out-dir gkr_attacks/proofs/hybrid > /dev/null 2>&1; then
+    --out-dir gkr_attacks/proofs/hybrid \
+    $ACCEL_MODE > /dev/null 2>&1; then
 
     echo -e "${GREEN}Hybrid attack proof generated${NC}"
 
     if ./target/release/nova_poc verify \
-        --proof-path gkr_attacks/proofs/hybrid/gkr_proof.bin \
-        --public-path gkr_attacks/proofs/hybrid/public.json > /dev/null 2>&1; then
+        --proof-path gkr_attacks/proofs/hybrid/$PROOF_FILE \
+        --public-path gkr_attacks/proofs/hybrid/$PUBLIC_FILE > /dev/null 2>&1; then
         echo -e "${GREEN}System maintains integrity under combined attack vectors${NC}"
     else
         echo -e "${RED}ATTACK SUCCESSFUL: Hybrid attack caused verification failure!${NC}"

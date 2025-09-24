@@ -22,8 +22,9 @@ pip install pandas matplotlib numpy psutil
 ## Benchmarking & Performance
 
 ### `benchmark.py`
-Comprehensive benchmarking and visualization tool that runs GKR performance tests and generates detailed analysis plots.
+Comprehensive benchmarking and visualization tool that runs GKR performance tests with optional hardware acceleration and generates detailed analysis plots.
 
+#### Standard Benchmarking
 ```bash
 # Run complete benchmark with visualization (generates benchmark_results.csv and benchmark_results.png)
 python3 scripts/benchmark.py --sizes 4096,8192,16384,32768 --repeats 3
@@ -32,8 +33,26 @@ python3 scripts/benchmark.py --sizes 4096,8192,16384,32768 --repeats 3
 python3 scripts/benchmark.py --sizes 4096,8192,16384,32768,50204 --repeats 5 --output production_bench
 ```
 
+#### Accelerated Benchmarking
+```bash
+# CPU AVX2/AVX-512 accelerated benchmark (requires --features accel_cpu_avx)
+python3 scripts/benchmark.py --avx --sizes 4096,8192,16384,32768 --repeats 3 --output avx_benchmark
+
+# CUDA GPU accelerated benchmark (requires --features accel_cuda)
+python3 scripts/benchmark.py --cuda --sizes 4096,8192,16384,32768 --repeats 3 --output cuda_benchmark
+
+# CPU acceleration with custom thread count
+python3 scripts/benchmark.py --avx --accel-threads 8 --sizes 4096,8192,16384 --output avx_8threads
+
+# CUDA acceleration with specific GPU device
+python3 scripts/benchmark.py --cuda --accel-device-id 0 --sizes 4096,8192,16384 --output cuda_gpu0
+```
+
 **Features:**
-- Automated nova_poc benchmark execution
+- **Hardware Acceleration Support**: CPU AVX2/AVX-512 and CUDA GPU backends
+- **Baseline Comparison**: Pure matrix multiplication timing vs GKR proving
+- **Overhead Analysis**: Shows exact ZK proving cost (e.g., "15.2× slower than baseline")
+- Automated nova_poc benchmark execution with acceleration flags
 - Real-time performance analysis and complexity fitting
 - Automatic generation of both CSV data and PNG visualization
 - Comprehensive visualization with 5 detailed plots
@@ -42,12 +61,12 @@ python3 scripts/benchmark.py --sizes 4096,8192,16384,32768,50204 --repeats 5 --o
 
 **Output Files:**
 - **name.csv**: Timing, memory, and proof size metrics
-- **name.png**: Comprehensive performance visualization with:
-  - Proving time scaling analysis with O(K^n) complexity fitting
-  - Verification time characteristics (constant-time verification)
-  - Proof size growth patterns (logarithmic scaling)
-  - Normalized scaling comparison
-  - Performance summary table
+- **name.png**: Enhanced performance visualization with:
+  - **GKR vs Baseline Scaling**: Comparison of GKR proving time vs pure matrix multiplication
+  - **Verification Time**: Constant ~0.4ms verification across all matrix sizes
+  - **Proof Size Growth**: Logarithmic scaling patterns with matrix size
+  - **Scaling Comparison**: Normalized view of GKR, baseline, and proof size scaling
+  - **Performance Summary Table**: Shows Infer time, Prove+Infer time with overhead ratios
 
 ## Security Testing
 
@@ -92,8 +111,14 @@ Advanced stress testing with 6 sophisticated attack scenarios.
 ### Quick Examples
 
 ```bash
-# Complete performance analysis
+# Standard complete performance analysis
 python3 scripts/benchmark.py --sizes 4096,8192,16384,32768,50204 --repeats 5 --output comprehensive_benchmark
+
+# CPU AVX accelerated performance comparison
+python3 scripts/benchmark.py --avx --sizes 4096,8192,16384,32768 --repeats 5 --output avx_comparison
+
+# CUDA GPU accelerated performance comparison
+python3 scripts/benchmark.py --cuda --sizes 4096,8192,16384,32768 --repeats 5 --output cuda_comparison
 
 # Security validation
 ./scripts/gkr_attack_suite.sh && ./scripts/gkr_stress_test.sh
@@ -103,4 +128,11 @@ python3 scripts/benchmark.py --sizes 4096,8192,16384,32768,50204 --repeats 5 --o
 
 - Large matrix sizes (K>32768) may require significant time and memory
 - Security testing generates temporary files that are automatically cleaned up
-- Ensure nova_poc binary is built with `cargo build --release` before running scripts
+- Ensure nova_poc binary is built appropriately before running scripts:
+  - **Standard**: `cargo build --release`
+  - **CPU AVX**: `cargo build --release --features accel_cpu_avx`
+  - **CUDA**: `cargo build --release --features accel_cuda`
+  - **All Acceleration**: `cargo build --release --features accel_all`
+- AVX acceleration requires x86_64 CPU with AVX2 support
+- CUDA acceleration requires NVIDIA GPU with CUDA drivers installed
+- Benchmark script automatically falls back to available backends if acceleration features aren't built
