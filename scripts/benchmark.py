@@ -46,6 +46,41 @@ def get_system_info():
     }
     return info
 
+def measure_baseline_inference(sizes, repeats):
+    """Measure baseline matrix multiplication times (without proof generation)."""
+    print(f"🔍 Measuring baseline matrix multiplication times...")
+
+    baseline_data = []
+
+    for k in sizes:
+        m = 16  # Fixed m=16 as in nova_poc
+        total_time = 0.0
+
+        for run in range(repeats):
+            # Generate random matrix and vector
+            import random
+            import time
+
+            # Create random m×k matrix and k-dimensional vector
+            matrix = [[random.randint(-100, 100) for _ in range(k)] for _ in range(m)]
+            vector = [random.randint(-100, 100) for _ in range(k)]
+
+            # Time the matrix-vector multiplication
+            start = time.perf_counter()
+            result = []
+            for i in range(m):
+                row_sum = sum(matrix[i][j] * vector[j] for j in range(k))
+                result.append(row_sum)
+            end = time.perf_counter()
+
+            total_time += (end - start) * 1000.0  # Convert to ms
+
+        avg_time = total_time / repeats
+        baseline_data.append({'k': k, 'm': m, 'time_ms': avg_time})
+        print(f"   Baseline {m}×{k}: {avg_time:.3f}ms avg")
+
+    return baseline_data
+
 def run_nova_poc_benchmark(binary_path, sizes, repeats, output_file):
     """Run nova_poc benchmark command and capture results."""
     print(f"Running nova_poc benchmark: sizes={sizes}, repeats={repeats}")
@@ -92,7 +127,7 @@ def load_benchmark_data(csv_path):
 
     return avg_data
 
-def create_performance_plots(data, output_dir="benchmark_plots"):
+def create_performance_plots(data, baseline_data, output_dir="benchmark_plots"):
     """Create comprehensive performance visualization plots."""
     if data is None or len(data) == 0:
         print("No data available for plotting")
@@ -119,9 +154,16 @@ def create_performance_plots(data, output_dir="benchmark_plots"):
     prove_stds = prove_data['time_ms_std'].values
 
     plt.errorbar(k_values, prove_times, yerr=prove_stds,
-                marker='o', markersize=8, linewidth=2, capsize=5, label='Proving Time')
+                marker='o', markersize=8, linewidth=2, capsize=5, label='GKR Proving (Inference + Proof)')
 
-    # Fit complexity curve
+    # Add baseline curve
+    if baseline_data:
+        baseline_k = [b['k'] for b in baseline_data]
+        baseline_times = [b['time_ms'] for b in baseline_data]
+        plt.plot(baseline_k, baseline_times, 's-', markersize=6, linewidth=2,
+                alpha=0.8, color='orange', label='Baseline Matrix Multiplication')
+
+    # Fit complexity curve for proving times
     if len(k_values) > 1:
         log_k = np.log(k_values)
         log_time = np.log(prove_times)
@@ -132,11 +174,25 @@ def create_performance_plots(data, output_dir="benchmark_plots"):
         k_trend = np.linspace(k_values.min(), k_values.max(), 100)
         time_trend = np.exp(coeffs[1]) * (k_trend ** complexity)
         plt.plot(k_trend, time_trend, '--', alpha=0.7,
-                label=f'O(K^{complexity:.3f})')
+                label=f'GKR Scaling: O(K^{complexity:.3f})')
+
+    # Fit baseline complexity curve
+    if baseline_data and len(baseline_data) > 1:
+        baseline_k_vals = np.array([b['k'] for b in baseline_data])
+        baseline_time_vals = np.array([b['time_ms'] for b in baseline_data])
+        log_k_base = np.log(baseline_k_vals)
+        log_time_base = np.log(baseline_time_vals)
+        coeffs_base = np.polyfit(log_k_base, log_time_base, 1)
+        baseline_complexity = coeffs_base[0]
+
+        k_trend = np.linspace(baseline_k_vals.min(), baseline_k_vals.max(), 100)
+        baseline_trend = np.exp(coeffs_base[1]) * (k_trend ** baseline_complexity)
+        plt.plot(k_trend, baseline_trend, ':', alpha=0.7, color='orange',
+                label=f'Baseline Scaling: O(K^{baseline_complexity:.3f})')
 
     plt.xlabel('Matrix Width K')
-    plt.ylabel('Proving Time (ms)')
-    plt.title('GKR Proving Time Scaling')
+    plt.ylabel('Time (ms)')
+    plt.title('GKR vs Baseline Matrix Multiplication Scaling')
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.xscale('log')
@@ -199,13 +255,25 @@ def create_performance_plots(data, output_dir="benchmark_plots"):
         time_norm = prove_times / prove_times[0]
         size_norm = proof_sizes / proof_sizes[0]
 
-        plt.plot(k_norm, time_norm, 'o-', label='Proving Time', linewidth=2)
+        plt.plot(k_norm, time_norm, 'o-', label='GKR Proving Time', linewidth=2)
         plt.plot(k_norm, size_norm, 's-', label='Proof Size', linewidth=2)
+
+        # Add baseline time comparison
+        if baseline_data and len(baseline_data) > 1:
+            baseline_k_vals = np.array([b['k'] for b in baseline_data])
+            baseline_time_vals = np.array([b['time_ms'] for b in baseline_data])
+
+            # Find matching k values and normalize
+            baseline_norm_k = baseline_k_vals / baseline_k_vals[0]
+            baseline_norm_time = baseline_time_vals / baseline_time_vals[0]
+            plt.plot(baseline_norm_k, baseline_norm_time, '^-',
+                    label='Baseline Matrix Mult', linewidth=2, alpha=0.8, color='orange')
+
         plt.plot(k_norm, k_norm, '--', alpha=0.7, label='Linear Reference')
 
         plt.xlabel('Matrix Size (normalized)')
         plt.ylabel('Metric (normalized)')
-        plt.title('Scaling Comparison')
+        plt.title('Scaling Comparison: GKR vs Baseline')
         plt.legend()
         plt.grid(True, alpha=0.3)
         plt.xscale('log')
@@ -223,16 +291,34 @@ def create_performance_plots(data, output_dir="benchmark_plots"):
         proof_size = proof_sizes[i]
         verify_time = verify_times[i] if i < len(verify_times) else 0
 
+        # Find matching baseline time for this k value
+        baseline_time = None
+        if baseline_data:
+            for b in baseline_data:
+                if b['k'] == k:
+                    baseline_time = b['time_ms']
+                    break
+
+        infer_cell = f"{baseline_time:.2f}ms" if baseline_time is not None else "N/A"
+
+        # Format Prove + Infer cell with overhead in brackets
+        if baseline_time is not None and baseline_time > 0:
+            overhead_ratio = prove_time / baseline_time
+            prove_cell = f"{prove_time:.1f}ms ({overhead_ratio:.1f}×)"
+        else:
+            prove_cell = f"{prove_time:.1f}ms"
+
         table_data.append([
             f"16×{k:,}",
             f"{elements:,}",
-            f"{prove_time:.1f}ms",
+            infer_cell,
+            prove_cell,
             f"{verify_time:.2f}ms",
             f"{proof_size:.1f}KB"
         ])
 
     table = ax5.table(cellText=table_data,
-                     colLabels=['Matrix', 'Elements', 'Prove', 'Verify', 'Proof'],
+                     colLabels=['Matrix', 'Elements', 'Infer', 'Prove + Infer', 'Verify', 'Proof'],
                      cellLoc='center',
                      loc='center')
     table.auto_set_font_size(False)
@@ -241,7 +327,7 @@ def create_performance_plots(data, output_dir="benchmark_plots"):
 
     # Style the table
     for i in range(len(table_data) + 1):
-        for j in range(5):
+        for j in range(6):  # Updated to 6 columns
             cell = table[(i, j)]
             if i == 0:  # Header
                 cell.set_facecolor('#40466e')
@@ -323,12 +409,29 @@ def create_performance_plots(data, output_dir="benchmark_plots"):
 
     print(f"\n🔍 PLOT DESCRIPTIONS:")
     print("-" * 40)
-    print("1. Proving Time Scaling: Log-log plot showing sub-linear growth")
+    print("1. GKR vs Baseline Scaling: Log-log plot comparing GKR proving time")
+    print("   (inference + proof generation) vs baseline matrix multiplication")
     print("2. Verification Time: Constant ~0.3ms across all matrix sizes")
-    print("3. Proof Size Growth: Logarithmic scaling from 2.9KB to 4.1KB")
-    print("4. Scaling Comparison: Normalized view of all performance metrics")
+    print("3. Proof Size Growth: Logarithmic scaling with matrix size")
+    print("4. Scaling Comparison: Normalized view comparing GKR, baseline, and proof size")
     print("5. Performance Summary: Tabular view of key benchmarks")
     print("Plot generation completed successfully!")
+
+    if baseline_data:
+        print(f"\n📊 BASELINE COMPARISON:")
+        print("-" * 40)
+        if len(baseline_data) > 1:
+            first_baseline = baseline_data[0]['time_ms']
+            last_baseline = baseline_data[-1]['time_ms']
+            first_gkr = prove_times[0]
+            last_gkr = prove_times[-1]
+
+            overhead_first = first_gkr / first_baseline if first_baseline > 0 else float('inf')
+            overhead_last = last_gkr / last_baseline if last_baseline > 0 else float('inf')
+
+            print(f"• Smallest matrix: GKR {overhead_first:.1f}× slower than baseline")
+            print(f"• Largest matrix: GKR {overhead_last:.1f}× slower than baseline")
+            print(f"• GKR overhead includes: matrix mult + Merkle trees + sum-check proof")
 
     return str(output_path)
 
@@ -371,13 +474,8 @@ def main():
             binary_path = debug_binary
             print("⚠️  Using debug binary (slower)")
         else:
-            print("Building nova_poc binary...")
-            try:
-                subprocess.run(["cargo", "build", "--release"], check=True)
-                binary_path = release_binary
-            except subprocess.CalledProcessError:
-                print("Failed to build binary")
-                return 1
+            print("❌ Error: Release binary not found. Run 'cargo build --release' first")
+            return 1
 
     # Get system info
     system_info = get_system_info()
@@ -385,8 +483,12 @@ def main():
     for key, value in system_info.items():
         print(f"  {key}: {value}")
 
+    # Measure baseline matrix multiplication times
+    print(f"\n📏 Measuring baseline performance...")
+    baseline_data = measure_baseline_inference(sizes, args.repeats)
+
     # Run benchmarks
-    print(f"\n🚀 Running benchmarks: {sizes}")
+    print(f"\n🚀 Running GKR benchmarks: {sizes}")
     success = run_nova_poc_benchmark(binary_path, sizes, args.repeats, csv_output)
 
     # Generate plots
@@ -396,7 +498,7 @@ def main():
         if data is not None:
             # Create plot in same directory as CSV with same base name
             plot_dir = os.path.dirname(png_output) or "."
-            plot_path = create_performance_plots(data, plot_dir)
+            plot_path = create_performance_plots(data, baseline_data, plot_dir)
             if plot_path:
                 # Move plot to correct name
                 import shutil

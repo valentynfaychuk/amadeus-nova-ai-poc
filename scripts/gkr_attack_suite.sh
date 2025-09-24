@@ -56,8 +56,8 @@ section "0" "PREPARATION"
 
 # Build nova_poc if needed
 if [ ! -f "./target/release/nova_poc" ]; then
-    echo "Building nova_poc..."
-    cargo build --release -p nova_poc
+    echo -e "${RED}Error: Release binary not found. Run 'cargo build --release' first${NC}"
+    exit 1
 fi
 
 # Create attack workspace
