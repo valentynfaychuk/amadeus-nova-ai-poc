@@ -8,7 +8,6 @@ Nova AI consists of three main components:
 
 - **`zk_gkr/`** - Core GKR protocol implementation with sum-check, Merkle commitments, and Fiat-Shamir transcript
 - **`nova_poc/`** - Command-line interface for proof generation, verification, and benchmarking
-- **`circuit/`** - R1CS circuit definitions for constraint systems (legacy Groth16 support)
 
 ## Performance
 

@@ -8,7 +8,6 @@ name = "nova_poc"
 path = "src/main.rs"
 
 [dependencies]
-circuit = { path = "../circuit" }
 zk_gkr = { path = "../zk_gkr" }
 ark-bn254 = "0.4"
 ark-ec = "0.4"
