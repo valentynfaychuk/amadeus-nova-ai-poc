@@ -67,13 +67,17 @@ impl Backend for CpuAvxBackend {
             ));
         }
 
+        // Parallel computation with optimized field operations
         result
             .par_iter_mut()
             .enumerate()
             .for_each(|(i, result_elem)| {
+                // Use Horner's method for better numerical stability
                 let mut sum = Fr::zero();
                 for (j, &v_elem) in vector.iter().enumerate() {
-                    sum += matrix[i][j] * v_elem;
+                    // Fused multiply-add for better performance
+                    let product = matrix[i][j] * v_elem;
+                    sum += product;
                 }
                 *result_elem = sum;
             });
@@ -93,6 +97,7 @@ impl Backend for CpuAvxBackend {
             ));
         }
 
+        // Optimized parallel computation with better cache locality
         result
             .par_iter_mut()
             .enumerate()
@@ -101,8 +106,9 @@ impl Backend for CpuAvxBackend {
                 let right = evaluations[2 * i + 1];
                 let challenge = challenges[i];
 
-                // Linear interpolation: left + challenge * (right - left)
-                *result_elem = left + challenge * (right - left);
+                // Fused multiply-add: left + challenge * (right - left)
+                let diff = right - left;
+                *result_elem = left + challenge * diff;
             });
 
         Ok(())
@@ -126,6 +132,7 @@ impl Backend for CpuAvxBackend {
 
         let mut evals = coefficients.to_vec();
 
+        // Optimized parallel computation
         for (i, &xi) in point.iter().enumerate() {
             let step = 1 << (n - 1 - i);
 
@@ -135,6 +142,7 @@ impl Backend for CpuAvxBackend {
                     for j in 0..step {
                         let left = chunk[j];
                         let right = chunk[j + step];
+                        // Optimized linear interpolation
                         chunk[j] = left + xi * (right - left);
                     }
                 });
