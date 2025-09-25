@@ -10,7 +10,11 @@ use ark_ff::PrimeField;
 use rayon::prelude::*;
 use std::time::Instant;
 use zk_gkr::{
+    proof::GkrProof,
+    sumcheck::{SumCheckProver, SumCheckVerifier},
     transcript::FiatShamirTranscript,
+    merkle_poseidon::PoseidonMerkleTree,
+    mle::MleUtils,
 };
 
 #[derive(Debug)]
@@ -277,38 +281,89 @@ impl AccelContext for CpuAvxContext {
         &mut self,
         weights: &[Vec<Fr>],
         input: &[Fr],
-        _salt: &str,
+        salt: &str,
     ) -> Result<ProofResult, AccelError> {
         let start_time = Instant::now();
 
-        // Compute y = W * x
-        let mut output = vec![Fr::zero(); weights.len()];
+        let m = weights.len();
+        let k = input.len();
+
+        // Compute y = W * x using accelerated backend
+        let mut output = vec![Fr::zero(); m];
         self.backend.matrix_vector_multiply(weights, input, &mut output)?;
 
-        // Create MLE for the computation
-        let mut all_values = Vec::new();
-        all_values.extend_from_slice(input);
-        all_values.extend_from_slice(&output);
+        // Convert to hypercube order and build Merkle trees
+        let w_data = MleUtils::matrix_to_hypercube_order(weights, m, k)
+            .map_err(|e| AccelError::ComputationFailed(format!("Failed to convert W to hypercube: {e}")))?;
+        let x_data = MleUtils::vector_to_hypercube_order(input, k)
+            .map_err(|e| AccelError::ComputationFailed(format!("Failed to convert X to hypercube: {e}")))?;
 
-        // Create a basic GKR proof structure
-        let mut transcript = FiatShamirTranscript::new()?;
+        let w_tree = PoseidonMerkleTree::build_tree(&w_data)
+            .map_err(|e| AccelError::ComputationFailed(format!("Failed to build W tree: {e}")))?;
+        let x_tree = PoseidonMerkleTree::build_tree(&x_data)
+            .map_err(|e| AccelError::ComputationFailed(format!("Failed to build X tree: {e}")))?;
 
-        // Add public inputs to transcript
-        for &val in input {
-            transcript.absorb_fr(&val);
+        let h_w = w_tree.root();
+        let h_x = x_tree.root();
+
+        // Create Fiat-Shamir transcript
+        let mut transcript = FiatShamirTranscript::new_seeded(
+            &h_w,
+            &h_x,
+            m,
+            k,
+            None, // model_id
+            None, // vk_hash
+            salt,
+        ).map_err(|e| AccelError::ComputationFailed(format!("Failed to create transcript: {e}")))?;
+
+        // Calculate padded dimensions
+        let a = (m as f64).log2().ceil() as usize;
+        let b = (k as f64).log2().ceil() as usize;
+
+        // Derive challenge vector u
+        let u = transcript.derive_u_vector(1 << a)
+            .map_err(|e| AccelError::ComputationFailed(format!("Failed to derive u vector: {e}")))?;
+
+        // Compute claimed value c = u^T * (W * x) = u^T * y
+        let mut c = Fr::zero();
+        for (i, &u_val) in u.iter().enumerate() {
+            if i < output.len() {
+                c += u_val * output[i];
+            }
         }
-        for &val in &output {
-            transcript.absorb_fr(&val);
-        }
 
-        // Simple serialization by converting field elements to strings
-        // In a real implementation, this would be a proper GKR proof
-        let proof_str = format!("{:?}", (&all_values, output[0]));
-        let proof_bytes = proof_str.as_bytes().to_vec();
+        // Create SumCheck prover with correct parameter order
+        let prover = SumCheckProver::new(
+            u,
+            w_data,
+            x_data,
+            a,
+            b,
+            w_tree,
+            x_tree,
+        ).map_err(|e| AccelError::ComputationFailed(format!("Failed to create prover: {e}")))?;
 
+        // Note: u derivation already done above, don't repeat it
+
+        // Generate sum-check proof
+        let sumcheck_proof = prover.prove(&mut transcript)
+            .map_err(|e| AccelError::ComputationFailed(format!("Failed to generate sum-check proof: {e}")))?;
+
+        // Create complete GKR proof
+        let gkr_proof = GkrProof::new(
+            m, k, h_w, h_x, c, salt.to_string(), sumcheck_proof
+        );
+
+        // Serialize proof to bytes
+        let proof_bytes = gkr_proof.to_bytes()
+            .map_err(|e| AccelError::ComputationFailed(format!("Failed to serialize proof: {e}")))?;
+
+        // Create public inputs with correct format
         let mut public_inputs = Vec::new();
         public_inputs.extend_from_slice(input);
         public_inputs.extend_from_slice(&output);
+        public_inputs.push(c); // Add claimed value
 
         let proof_time = start_time.elapsed().as_millis();
 
@@ -316,7 +371,7 @@ impl AccelContext for CpuAvxContext {
             proof: proof_bytes,
             public_inputs,
             proof_time_ms: proof_time,
-            memory_usage_mb: None, // Could add memory tracking
+            memory_usage_mb: None,
         })
     }
 
@@ -324,20 +379,77 @@ impl AccelContext for CpuAvxContext {
         &self,
         proof_data: &[u8],
         public_inputs: &[Fr],
-        _salt: &str,
+        salt: &str,
     ) -> Result<bool, AccelError> {
-        // Simple deserialization check - just verify we can read the proof data
-        let _proof_str = String::from_utf8(proof_data.to_vec())
-            .map_err(|e| AccelError::ComputationFailed(format!("Proof data not valid UTF-8: {e}")))?;
+        // Deserialize GKR proof
+        let gkr_proof = GkrProof::from_bytes(proof_data)
+            .map_err(|e| AccelError::ComputationFailed(format!("Failed to deserialize proof: {e}")))?;
 
-        // Simplified verification - in a real implementation this would verify the sumcheck
-        let mut transcript = FiatShamirTranscript::new()?;
-        for &val in public_inputs {
-            transcript.absorb_fr(&val);
+        // Extract dimensions and values from public inputs
+        // Format: [input..., output..., claimed_value]
+        let total_len = public_inputs.len();
+        if total_len < 3 { // At least 1 input, 1 output, 1 claimed value
+            return Err(AccelError::ComputationFailed("Invalid public inputs format".to_string()));
         }
 
-        // For now, return true if deserialization succeeded
-        Ok(true)
+        let m = gkr_proof.m;
+        let k = gkr_proof.k;
+
+        if total_len != k + m + 1 {
+            return Err(AccelError::ComputationFailed(
+                format!("Public inputs length {} doesn't match expected {}", total_len, k + m + 1)
+            ));
+        }
+
+        let claimed_value = public_inputs[k+m];
+
+        // Verify claimed value matches proof
+        if gkr_proof.c != claimed_value {
+            return Ok(false);
+        }
+
+        // Create verification transcript
+        let mut transcript = FiatShamirTranscript::new_seeded(
+            &gkr_proof.h_w,
+            &gkr_proof.h_x,
+            m,
+            k,
+            None, // model_id
+            None, // vk_hash
+            salt,
+        ).map_err(|e| AccelError::ComputationFailed(format!("Failed to create verification transcript: {e}")))?;
+
+        let a = (m as f64).log2().ceil() as usize;
+        let u = transcript.derive_u_vector(1 << a)
+            .map_err(|e| AccelError::ComputationFailed(format!("Failed to derive u vector: {e}")))?;
+
+        // Create verification transcript (matching prover state)
+        let mut verify_transcript = FiatShamirTranscript::new_seeded(
+            &gkr_proof.h_w,
+            &gkr_proof.h_x,
+            m,
+            k,
+            None,
+            None,
+            salt,
+        ).map_err(|e| AccelError::ComputationFailed(format!("Failed to create verify transcript: {e}")))?;
+
+        // Skip u derivation to match prover state
+        verify_transcript.derive_u_vector(1 << a)
+            .map_err(|e| AccelError::ComputationFailed(format!("Failed to skip u derivation: {e}")))?;
+
+        // Verify the sum-check proof using real cryptographic verification
+        let verification_result = SumCheckVerifier::verify(
+            &gkr_proof.sumcheck_proof,
+            &u,
+            &gkr_proof.h_w,
+            &gkr_proof.h_x,
+            gkr_proof.a,
+            gkr_proof.b,
+            &mut verify_transcript,
+        ).map_err(|e| AccelError::ComputationFailed(format!("Sum-check verification failed: {e}")))?;
+
+        Ok(verification_result)
     }
 
     fn benchmark_computation(

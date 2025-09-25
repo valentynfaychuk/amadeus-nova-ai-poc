@@ -642,15 +642,13 @@ fn run_prove_gkr_accelerated(args: ProveGkrArgs) -> Result<()> {
     fs::write(&proof_path, &proof_result.proof)?;
     println!("💾 Accelerated proof saved to: {:?}", proof_path);
 
-    // Save public inputs - using a simplified approach for acceleration
-    // In a real implementation, these would be the actual merkle roots and claimed value
-    let h_w = Fr::from(1u64); // Placeholder for actual merkle root
-    let h_x = Fr::from(2u64); // Placeholder for actual merkle root
-    let c = if !proof_result.public_inputs.is_empty() {
-        proof_result.public_inputs[args.k] // First element of the output
-    } else {
-        Fr::from(0u64)
-    }; // Claimed value
+    // Extract actual values from the accelerated proof
+    let gkr_proof = GkrProof::from_bytes(&proof_result.proof)
+        .map_err(|e| anyhow::anyhow!("Failed to deserialize accelerated proof for public input extraction: {}", e))?;
+
+    let h_w = gkr_proof.h_w;
+    let h_x = gkr_proof.h_x;
+    let c = gkr_proof.c;
 
     let public_inputs = GkrPublicInputs {
         m: args.m,
@@ -664,26 +662,35 @@ fn run_prove_gkr_accelerated(args: ProveGkrArgs) -> Result<()> {
     };
 
     let public_path = args.out_dir.join("public_accel.json");
-    // Manual JSON serialization to avoid serde issues
+    // Manual JSON serialization with proper null values
+    let model_id_json = match &public_inputs.model_id {
+        Some(id) => format!("\"{}\"", id),
+        None => "null".to_string(),
+    };
+    let vk_hash_json = match &public_inputs.vk_hash {
+        Some(hash) => format!("\"{}\"", hash),
+        None => "null".to_string(),
+    };
+
     let public_json = format!(
         r#"{{
-  "m": {},
-  "k": {},
+  "c": "{}",
   "h_w": "{}",
   "h_x": "{}",
-  "c": "{}",
-  "model_id": {:?},
-  "vk_hash": {:?},
-  "salt": "{}"
+  "k": {},
+  "m": {},
+  "model_id": {},
+  "salt": "{}",
+  "vk_hash": {}
 }}"#,
-        public_inputs.m,
-        public_inputs.k,
+        field_to_hex(&public_inputs.c),
         field_to_hex(&public_inputs.h_w),
         field_to_hex(&public_inputs.h_x),
-        field_to_hex(&public_inputs.c),
-        public_inputs.model_id,
-        public_inputs.vk_hash,
-        public_inputs.salt
+        public_inputs.k,
+        public_inputs.m,
+        model_id_json,
+        public_inputs.salt,
+        vk_hash_json
     );
     fs::write(&public_path, public_json)?;
     println!("💾 Public inputs saved to: {:?}", public_path);

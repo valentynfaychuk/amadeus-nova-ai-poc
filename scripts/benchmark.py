@@ -176,7 +176,7 @@ def run_accelerated_benchmark(binary_path, sizes, repeats, output_file, backend,
                         "--m", str(m),
                         "--k", str(k),
                         "--out-dir", str(output_dir),
-                        "--salt", "benchmark",
+                        "--salt", "62656e63686d61726b",  # "benchmark" in hex
                         "--accel",
                         "--accel-backend", backend,
                         "--accel-device-id", str(device_id)

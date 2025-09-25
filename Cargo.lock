@@ -1751,6 +1751,7 @@ dependencies = [
  "anyhow",
  "ark-bn254",
  "ark-ff",
+ "ark-serialize",
  "bincode",
  "bytemuck",
  "criterion",
