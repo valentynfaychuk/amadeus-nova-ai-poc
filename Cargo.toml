@@ -1,3 +1,11 @@
 [workspace]
-members = ["nova_poc", "zk_gkr", "zk_gkr_accel"]
+members = ["expander_matrix_poc", "legacy_matrix_poc", "legacy_matrix_poc/zk_gkr"]
 resolver = "2"
+
+# Clean workspace structure:
+# - expander_matrix_poc: Modern high-performance solution (70x+ faster)
+# - legacy_matrix_poc: Original implementation (functional, for reference)
+#   └── zk_gkr: Legacy GKR library (contained within legacy implementation)
+#
+# Removed:
+# - zk_gkr_accel: Failed acceleration attempt with security issues

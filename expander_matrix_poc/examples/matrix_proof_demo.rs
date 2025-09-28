@@ -13,19 +13,11 @@ fn main() -> anyhow::Result<()> {
     println!("🚀 Expander SDK Matrix Multiplication Proof Demo");
     println!("================================================\n");
 
-    // Test different matrix sizes to show performance scaling
-    let test_sizes = vec![
-        (4, 8),      // Small test
-        (16, 64),    // Medium test
-        (32, 256),   // Larger test
-        (64, 512),   // Performance test
-    ];
-
-    for (m, k) in test_sizes {
-        println!("📐 Testing {}×{} matrix multiplication proof", m, k);
-        run_matrix_proof_test(m, k)?;
-        println!();
-    }
+    // Test large matrix: 16×50204 (approximately 800K matrix operations)
+    let (m, k) = (16, 50204);
+    println!("📐 Testing {}×{} matrix multiplication proof", m, k);
+    println!("    Matrix operations: {} (~800K)", m * k);
+    run_matrix_proof_test(m, k)?;
 
     println!("✅ All tests completed successfully!");
     Ok(())
@@ -110,7 +102,7 @@ mod demo_tests {
 
     #[test]
     fn test_demo_functionality() {
-        // Run a small test to ensure demo works
+        // Run a small test to ensure demo works (using smaller matrix for testing)
         run_matrix_proof_test(4, 8).expect("Demo test should succeed");
     }
 

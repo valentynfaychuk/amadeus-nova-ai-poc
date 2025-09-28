@@ -8,8 +8,10 @@ pub mod circuit;
 pub mod prover;
 pub mod verifier;
 pub mod types;
+pub mod security_tests;
 
 pub use types::*;
+// Use real Expander implementations (falls back to CLI if API not available)
 pub use prover::ExpanderMatrixProver;
 pub use verifier::ExpanderMatrixVerifier;
 

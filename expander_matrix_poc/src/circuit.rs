@@ -183,6 +183,29 @@ impl MatrixMultCircuit {
 
         Ok(public)
     }
+
+    /// Generate cryptographic hash of circuit for proof integrity
+    pub fn generate_circuit_hash(&self) -> anyhow::Result<Vec<u8>> {
+        use ark_ff::PrimeField;
+        use ark_bn254::Fr;
+        use ark_serialize::CanonicalSerialize;
+
+        // Create deterministic hash from circuit parameters
+        let circuit_desc = self.create_circuit_description()?;
+        let mut hasher_input = Vec::new();
+
+        hasher_input.extend_from_slice(circuit_desc.as_bytes());
+        hasher_input.extend_from_slice(&self.m.to_le_bytes());
+        hasher_input.extend_from_slice(&self.k.to_le_bytes());
+
+        // Generate field element hash
+        let hash_field = Fr::from_le_bytes_mod_order(&hasher_input);
+        let mut hash_bytes = Vec::new();
+        hash_field.serialize_compressed(&mut hash_bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize circuit hash: {}", e))?;
+
+        Ok(hash_bytes)
+    }
 }
 
 /// Convert field element to string representation

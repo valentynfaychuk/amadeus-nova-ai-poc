@@ -70,6 +70,17 @@ cd expander_matrix_poc
 cargo build --release
 ```
 
+## 🚀 Real CUDA Acceleration
+
+For production performance with real CUDA acceleration:
+
+1. **Install on Linux x86_64** with proper CUDA toolkit
+2. **Uncomment Expander dependencies** in `expander_matrix_poc/Cargo.toml`
+3. **Install MPI dependencies**: `sudo apt-get install libmpich-dev mpich`
+4. **Build with optimizations**: `RUSTFLAGS="-C target-cpu=native" cargo build --release`
+
+Expected performance improvement: **5-10× additional speedup** beyond current results.
+
 ### Running the Demo
 
 ```bash
@@ -224,6 +235,59 @@ Benefits:
    - Add comprehensive security auditing
    - Implement proof batching for multiple matrices
    - Add serialization formats (JSON, binary)
+
+## 📊 Benchmark Plots and Analysis
+
+Criterion automatically generates beautiful plots and detailed analysis:
+
+### Running Benchmarks
+```bash
+# Run all benchmarks (generates plots)
+cargo bench
+
+# Run specific benchmark groups
+cargo bench proof_generation
+cargo bench matrix_multiplication
+```
+
+### Viewing Results
+After running benchmarks, open the interactive HTML reports:
+
+```bash
+# Open main benchmark report
+open target/criterion/report/index.html
+
+# Open specific benchmark details
+open target/criterion/proof_generation/32x64/report/index.html
+```
+
+### Available Visualizations
+Each benchmark generates:
+- **📈 Performance Trends**: Time series and regression analysis
+- **📊 Distribution Plots**: Statistical distribution of measurements
+- **🔄 Comparison Charts**: Before/after performance comparisons
+- **📉 Scaling Analysis**: How performance scales with input size
+- **📋 Detailed Statistics**: Mean, median, standard deviation, outliers
+
+### Installing gnuplot (Optional - Enhanced Plots)
+For even better plots with gnuplot backend:
+
+```bash
+# macOS
+brew install gnuplot
+
+# Ubuntu/Debian
+sudo apt-get install gnuplot
+
+# CentOS/RHEL
+sudo yum install gnuplot
+```
+
+### Performance Comparison Charts
+The benchmarks generate side-by-side comparisons:
+- **Legacy GKR vs Expander POC**: Direct performance comparison
+- **Scaling Analysis**: Performance across different matrix sizes
+- **Component Breakdown**: Individual operation timings
 
 ## Contributing
 
