@@ -92,51 +92,55 @@ impl MatrixMultCircuit {
     /// This needs to be adapted based on Expander's actual circuit format.
     /// For now, this is a placeholder that describes the computation structure.
     fn create_circuit_description(&self) -> Result<String> {
-        let mut circuit = String::new();
+        // Pre-allocate string capacity to avoid reallocations for large circuits
+        let estimated_size = (self.m + self.k) * 30 + (self.m * self.k) * 25 + (self.m * self.k * 15) + 1000;
+        let mut circuit = String::with_capacity(estimated_size);
+
+        use std::fmt::Write;
 
         // Circuit header
-        circuit.push_str(&format!("# Matrix multiplication circuit: {}×{}\n", self.m, self.k));
-        circuit.push_str(&format!("# Computes y = W·x where W is {}×{} private matrix\n", self.m, self.k));
-        circuit.push_str("\n");
+        writeln!(circuit, "# Matrix multiplication circuit: {}×{}", self.m, self.k)?;
+        writeln!(circuit, "# Computes y = W·x where W is {}×{} private matrix", self.m, self.k)?;
+        writeln!(circuit)?;
 
         // Field specification
-        circuit.push_str("field bn254\n");
-        circuit.push_str("\n");
+        writeln!(circuit, "field bn254")?;
+        writeln!(circuit)?;
 
         // Input declarations
-        circuit.push_str("# Public inputs\n");
+        writeln!(circuit, "# Public inputs")?;
         for i in 0..self.k {
-            circuit.push_str(&format!("public input x_{}\n", i));
+            writeln!(circuit, "public input x_{}", i)?;
         }
-        circuit.push_str("\n");
+        writeln!(circuit)?;
 
         // Output declarations
-        circuit.push_str("# Public outputs\n");
+        writeln!(circuit, "# Public outputs")?;
         for i in 0..self.m {
-            circuit.push_str(&format!("public output y_{}\n", i));
+            writeln!(circuit, "public output y_{}", i)?;
         }
-        circuit.push_str("\n");
+        writeln!(circuit)?;
 
         // Witness declarations (private matrix W)
-        circuit.push_str("# Private witness (matrix W)\n");
+        writeln!(circuit, "# Private witness (matrix W)")?;
         for i in 0..self.m {
             for j in 0..self.k {
-                circuit.push_str(&format!("private witness W_{}_{}\n", i, j));
+                writeln!(circuit, "private witness W_{}_{}", i, j)?;
             }
         }
-        circuit.push_str("\n");
+        writeln!(circuit)?;
 
         // Computation constraints
-        circuit.push_str("# Matrix multiplication constraints\n");
+        writeln!(circuit, "# Matrix multiplication constraints")?;
         for i in 0..self.m {
-            circuit.push_str(&format!("constraint y_{} = ", i));
+            write!(circuit, "constraint y_{} = ", i)?;
             for j in 0..self.k {
                 if j > 0 {
-                    circuit.push_str(" + ");
+                    write!(circuit, " + ")?;
                 }
-                circuit.push_str(&format!("W_{}_{} * x_{}", i, j, j));
+                write!(circuit, "W_{}_{} * x_{}", i, j, j)?;
             }
-            circuit.push_str("\n");
+            writeln!(circuit)?;
         }
 
         Ok(circuit)
@@ -144,16 +148,20 @@ impl MatrixMultCircuit {
 
     /// Create witness data in Expander's format
     fn create_witness_data(&self, weights: &Matrix) -> Result<String> {
-        let mut witness = String::new();
+        // Pre-allocate string capacity to avoid reallocations
+        let estimated_size = self.m * self.k * 50; // Rough estimate: 50 chars per element
+        let mut witness = String::with_capacity(estimated_size);
 
         witness.push_str(&format!("# Witness data for {}×{} matrix\n", self.m, self.k));
         witness.push_str("\n");
 
-        // Write matrix elements
+        // Write matrix elements with efficient formatting
         for i in 0..self.m {
             for j in 0..self.k {
                 let value = weights.get(i, j);
-                witness.push_str(&format!("W_{}_{} {}\n", i, j, field_to_string(value)));
+                use std::fmt::Write;
+                writeln!(witness, "W_{}_{} {}", i, j, field_to_string(value))
+                    .map_err(|e| anyhow::anyhow!("Failed to format witness data: {}", e))?;
             }
         }
 
@@ -190,13 +198,20 @@ impl MatrixMultCircuit {
         use ark_bn254::Fr;
         use ark_serialize::CanonicalSerialize;
 
-        // Create deterministic hash from circuit parameters
-        let circuit_desc = self.create_circuit_description()?;
+        // Create deterministic hash from circuit parameters without expensive string generation
         let mut hasher_input = Vec::new();
 
-        hasher_input.extend_from_slice(circuit_desc.as_bytes());
-        hasher_input.extend_from_slice(&self.m.to_le_bytes());
-        hasher_input.extend_from_slice(&self.k.to_le_bytes());
+        // Hash the circuit structure parameters directly
+        hasher_input.extend_from_slice("matrix_mult_circuit".as_bytes()); // Circuit type identifier
+        hasher_input.extend_from_slice(&self.m.to_le_bytes());           // Matrix rows
+        hasher_input.extend_from_slice(&self.k.to_le_bytes());           // Matrix cols
+        hasher_input.extend_from_slice("bn254".as_bytes());              // Field type
+
+        // Add circuit structure info without generating full description
+        let total_variables = self.m + self.k + (self.m * self.k);       // outputs + inputs + weights
+        let total_constraints = self.m;                                  // One constraint per output
+        hasher_input.extend_from_slice(&total_variables.to_le_bytes());
+        hasher_input.extend_from_slice(&total_constraints.to_le_bytes());
 
         // Generate field element hash
         let hash_field = Fr::from_le_bytes_mod_order(&hasher_input);

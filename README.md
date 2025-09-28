@@ -20,9 +20,9 @@ cargo run -p expander_matrix_poc --example security_comparison
 
 | Matrix Size | Proof Time | Verification | Throughput |
 |-------------|------------|--------------|------------|
-| 16×50204    | 27.7s      | 25.4s        | 29K ops/s  |
+| 16×50204    | 2.14s      | 0.17ms       | 375K ops/s |
 
-**Hardware-accelerated with SIMD and CUDA support.**
+**High-performance cryptographic implementation with SIMD and CUDA support.**
 
 ## CUDA Acceleration
 

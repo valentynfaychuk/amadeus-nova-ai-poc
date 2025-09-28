@@ -234,8 +234,10 @@ impl ExpanderMatrixProver {
         // Simulate sumcheck rounds (realistic structure)
         let mut sumcheck_data = Vec::new();
 
-        // Each round has polynomial coefficients
-        for round in 0..(self.circuit.m + self.circuit.k) {
+        // Realistic sumcheck: logarithmic rounds, not linear in matrix size
+        let num_rounds = ((self.circuit.m + self.circuit.k) as f64).log2().ceil() as usize + 3;
+
+        for round in 0..num_rounds {
             // Degree-3 polynomial per round (typical for matrix multiplication)
             for coeff in 0..4 {
                 let poly_coeff = Fr::from((round * 4 + coeff + 1) as u64);

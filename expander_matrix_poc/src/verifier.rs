@@ -38,16 +38,11 @@ impl ExpanderMatrixVerifier {
         input: &Vector,
         output: &Vector,
     ) -> Result<bool> {
-        let start_time = Instant::now();
-
         // Validate inputs
         self.validate_inputs(proof, input, output)?;
 
         // Verify using Expander
         let verification_result = self.verify_with_expander(proof, input, output)?;
-
-        let verification_time = start_time.elapsed();
-        println!("Verification completed in {:.2}ms", verification_time.as_secs_f64() * 1000.0);
 
         Ok(verification_result)
     }
@@ -138,7 +133,9 @@ impl ExpanderMatrixVerifier {
         let sumcheck_proof = proof_components.get("sumcheck_proof")
             .ok_or_else(|| anyhow::anyhow!("Missing sumcheck proof in proof"))?;
 
-        let expected_sumcheck_size = (self.circuit.m + self.circuit.k) * 4 * 32; // rounds * coeffs * field_size
+        // Use logarithmic rounds calculation (same as prover)
+        let num_rounds = ((self.circuit.m + self.circuit.k) as f64).log2().ceil() as usize + 3;
+        let expected_sumcheck_size = num_rounds * 4 * 32; // rounds * coeffs * field_size
         if sumcheck_proof.len() != expected_sumcheck_size {
             return Ok(false); // Invalid sumcheck structure
         }
