@@ -6,6 +6,9 @@
 use expander_compiler::frontend::*;
 use expander_compiler::zkcuda::{context::*, kernel::*};
 
+// Re-export M31 for public API
+pub use expander_compiler::frontend::M31;
+
 /// Matrix multiplication kernel for zkCUDA
 ///
 /// Multiplies a row vector (a) by a matrix (b) to produce output vector (c)
