@@ -1,11 +1,12 @@
 [workspace]
-members = ["expander_matrix_poc", "legacy_matrix_poc", "legacy_matrix_poc/zk_gkr"]
+members = ["legacy_matrix_poc", "legacy_matrix_poc/zk_gkr", "cuda_poc"]
 resolver = "2"
 
-# Clean workspace structure:
-# - expander_matrix_poc: Modern high-performance solution (70x+ faster)
-# - legacy_matrix_poc: Original implementation (functional, for reference)
-#   └── zk_gkr: Legacy GKR library (contained within legacy implementation)
+# Workspace structure:
+# - legacy_matrix_poc: Functional GKR implementation (CPU-optimized, proven backup)
+#   └── zk_gkr: GKR library (matrix multiplication proofs)
+# - cuda_poc: zkCUDA implementation using ExpanderCompilerCollection (GPU-accelerated)
 #
 # Removed:
+# - expander_matrix_poc: Incomplete Expander SDK integration (removed)
 # - zk_gkr_accel: Failed acceleration attempt with security issues

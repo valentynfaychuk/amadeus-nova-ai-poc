@@ -1,0 +1,11 @@
+[package]
+name = "cuda_poc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Expander Compiler Collection for zkCUDA
+expander_compiler = { git = "https://github.com/PolyhedraZK/ExpanderCompilerCollection.git", branch = "zkcuda" }
+
+# Utilities
+anyhow = "1.0"
