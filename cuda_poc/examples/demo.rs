@@ -45,17 +45,16 @@ fn main() -> anyhow::Result<()> {
     // Generate proof
     println!("\n🔐 Generating zero-knowledge proof on GPU...");
     let start = std::time::Instant::now();
-    let (result, proof) = system.prove(&mat_a, &mat_b)?;
+    let result = system.prove(&mat_a, &mat_b)?;
     let prove_time = start.elapsed();
 
     println!("  ✅ Proof generated in {:.2?}", prove_time);
-    println!("  📦 Proof size: {} bytes", proof.len());
     println!("  🔢 Computed result: {:?}", result);
 
     // Verify proof
     println!("\n🔍 Verifying proof...");
     let start = std::time::Instant::now();
-    let verified = system.verify(&mat_a, &mat_b, expected_result, &proof)?;
+    let verified = system.verify(&mat_a, &mat_b, expected_result)?;
     let verify_time = start.elapsed();
 
     if verified {
