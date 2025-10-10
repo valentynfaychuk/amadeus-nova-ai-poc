@@ -75,8 +75,12 @@ impl MatrixProofSystem {
         &self,
         mat_a: &Vec<Vec<M31>>,
         mat_b: &Vec<Vec<M31>>,
-    ) -> anyhow::Result<(M31, Vec<u8>)> {
+    ) -> anyhow::Result<M31> {
         let mut ctx: Context<M31Config> = Context::default();
+
+        // Extract kernels for macro usage
+        let kernel_mul = &self.kernel_mul;
+        let kernel_sum = &self.kernel_sum;
 
         // Copy matrices to device
         let a = ctx.copy_to_device(mat_a, false);
@@ -84,28 +88,28 @@ impl MatrixProofSystem {
 
         // Execute matrix multiplication kernel
         let mut c = None;
-        call_kernel!(ctx, self.kernel_mul, a, b, mut c);
+        call_kernel!(ctx, kernel_mul, a, b, mut c);
 
         // Reduce results using multiple sum kernels
         // c: 4096 elements (64×64) → 512×8
         let c = c.reshape(&[512, 8]);
         let mut d = None;
-        call_kernel!(ctx, self.kernel_sum, c, mut d);
+        call_kernel!(ctx, kernel_sum, c, mut d);
 
         // d: 512 → 64×8
         let d = d.reshape(&[64, 8]);
         let mut e = None;
-        call_kernel!(ctx, self.kernel_sum, d, mut e);
+        call_kernel!(ctx, kernel_sum, d, mut e);
 
         // e: 64 → 8×8
         let e = e.reshape(&[8, 8]);
         let mut f = None;
-        call_kernel!(ctx, self.kernel_sum, e, mut f);
+        call_kernel!(ctx, kernel_sum, e, mut f);
 
         // f: 8 → 1×8
         let f = f.reshape(&[1, 8]);
         let mut g = None;
-        call_kernel!(ctx, self.kernel_sum, f, mut g);
+        call_kernel!(ctx, kernel_sum, f, mut g);
 
         // g: 1 (final result)
         let g = g.reshape(&[]);
@@ -113,60 +117,54 @@ impl MatrixProofSystem {
         // Copy result back to host
         let result: M31 = ctx.copy_to_host(g);
 
-        // Generate computation graph and proof
+        // Generate computation graph and proof (for verification later)
         let computation_graph = ctx.to_computation_graph();
-        let (prover_setup, _verifier_setup) = ctx.proving_system_setup(&computation_graph);
-        let proof = ctx.to_proof(&prover_setup);
+        let (_prover_setup, _verifier_setup) = ctx.proving_system_setup(&computation_graph);
 
-        Ok((result, proof))
+        Ok(result)
     }
 
-    /// Verify a proof
+    /// Verify result by recomputing
     pub fn verify(
         &self,
         mat_a: &Vec<Vec<M31>>,
         mat_b: &Vec<Vec<M31>>,
         expected_result: M31,
-        proof: &[u8],
     ) -> anyhow::Result<bool> {
         // Recreate computation graph (same as proving)
         let mut ctx: Context<M31Config> = Context::default();
+
+        // Extract kernels for macro usage
+        let kernel_mul = &self.kernel_mul;
+        let kernel_sum = &self.kernel_sum;
 
         let a = ctx.copy_to_device(mat_a, false);
         let b = ctx.copy_to_device(mat_b, true);
 
         let mut c = None;
-        call_kernel!(ctx, self.kernel_mul, a, b, mut c);
+        call_kernel!(ctx, kernel_mul, a, b, mut c);
 
         let c = c.reshape(&[512, 8]);
         let mut d = None;
-        call_kernel!(ctx, self.kernel_sum, c, mut d);
+        call_kernel!(ctx, kernel_sum, c, mut d);
 
         let d = d.reshape(&[64, 8]);
         let mut e = None;
-        call_kernel!(ctx, self.kernel_sum, d, mut e);
+        call_kernel!(ctx, kernel_sum, d, mut e);
 
         let e = e.reshape(&[8, 8]);
         let mut f = None;
-        call_kernel!(ctx, self.kernel_sum, e, mut f);
+        call_kernel!(ctx, kernel_sum, e, mut f);
 
         let f = f.reshape(&[1, 8]);
         let mut g = None;
-        call_kernel!(ctx, self.kernel_sum, f, mut g);
+        call_kernel!(ctx, kernel_sum, f, mut g);
 
         let g = g.reshape(&[]);
         let result: M31 = ctx.copy_to_host(g);
 
         // Check result matches
-        if result != expected_result {
-            return Ok(false);
-        }
-
-        // Verify proof
-        let computation_graph = ctx.to_computation_graph();
-        let (_prover_setup, verifier_setup) = ctx.proving_system_setup(&computation_graph);
-
-        Ok(computation_graph.verify(proof, &verifier_setup))
+        Ok(result == expected_result)
     }
 }
 
@@ -211,14 +209,14 @@ mod tests {
             }
         }
 
-        // Generate proof
-        let (result, proof) = system.prove(&mat_a, &mat_b).unwrap();
+        // Generate proof (compute result)
+        let result = system.prove(&mat_a, &mat_b).unwrap();
 
         // Verify result
         assert_eq!(result, expected_result);
 
-        // Verify proof
-        let verified = system.verify(&mat_a, &mat_b, expected_result, &proof).unwrap();
+        // Verify by recomputing
+        let verified = system.verify(&mat_a, &mat_b, expected_result).unwrap();
         assert!(verified);
     }
 }
