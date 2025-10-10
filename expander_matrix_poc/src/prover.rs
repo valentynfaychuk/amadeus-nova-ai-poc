@@ -131,11 +131,9 @@ impl ExpanderMatrixProver {
         // Use expander-exec CLI (built from Expander SDK dependencies)
         let mut cmd = Command::new("expander-exec");
         cmd.arg("prove")
-            .arg("-c").arg(circuit_path)
-            .arg("-w").arg(witness_path)
-            .arg("-o").arg(proof_path)
-            .arg("-f").arg("fr")  // BN254 field
-            .arg("-p").arg("Raw"); // Raw polynomial commitment
+            .arg("--circuit-file").arg(circuit_path)
+            .arg("--witness-file").arg(witness_path)
+            .arg("--output-proof-file").arg(proof_path);
 
         eprintln!("🔧 Running expander-exec prove...");
         eprintln!("   Circuit: {:?}", circuit_path);

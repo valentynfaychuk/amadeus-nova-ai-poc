@@ -104,11 +104,9 @@ impl ExpanderMatrixVerifier {
         // Build expander-exec verify command
         let mut cmd = Command::new("expander-exec");
         cmd.arg("verify")
-            .arg("-c").arg(&circuit_path)
-            .arg("-w").arg(&public_path)  // Public inputs for verification
-            .arg("-i").arg(&proof_path)
-            .arg("-f").arg("fr")  // BN254 field
-            .arg("-p").arg("Raw"); // Raw polynomial commitment
+            .arg("--circuit-file").arg(&circuit_path)
+            .arg("--witness-file").arg(&public_path)  // Public inputs for verification
+            .arg("--input-proof-file").arg(&proof_path);
 
         eprintln!("🔍 Running expander-exec verify...");
         eprintln!("   Circuit: {:?}", circuit_path);
