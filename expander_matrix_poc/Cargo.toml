@@ -6,11 +6,10 @@ edition = "2021"
 # Part of parent workspace, removed local workspace declaration
 
 [dependencies]
-# Expander SDK for high-performance GKR
-# NOTE: Temporarily disabled due to MPI compatibility issues on macOS
-# gkr = { git = "https://github.com/PolyhedraZK/Expander.git", package = "gkr" }
-# arith = { git = "https://github.com/PolyhedraZK/Expander.git", package = "arith" }
-# config_macros = { git = "https://github.com/PolyhedraZK/Expander.git", package = "config_macros" }
+# Expander SDK for high-performance GKR with CUDA support
+gkr = { git = "https://github.com/PolyhedraZK/Expander.git", package = "gkr" }
+arith = { git = "https://github.com/PolyhedraZK/Expander.git", package = "arith" }
+config_macros = { git = "https://github.com/PolyhedraZK/Expander.git", package = "config_macros" }
 
 # Field arithmetic
 ark-bn254 = "0.4"
