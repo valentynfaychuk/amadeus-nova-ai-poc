@@ -83,85 +83,8 @@ impl ExpanderMatrixVerifier {
         Ok(())
     }
 
-    /// Verify proof using Expander's high-performance verifier
+    /// Verify proof using Expander CLI via expander-exec binary
     fn verify_with_expander(&self, proof: &MatrixProof, input: &Vector, output: &Vector) -> Result<bool> {
-        // Option 1: Use Expander's Rust API (preferred)
-        if let Ok(result) = self.verify_via_api(proof, input, output) {
-            return Ok(result);
-        }
-
-        // Option 2: Fallback to CLI interface
-        self.verify_via_cli(proof, input, output)
-    }
-
-    /// Verify proof using Expander's native Rust API
-    fn verify_via_api(&self, proof: &MatrixProof, input: &Vector, output: &Vector) -> Result<bool> {
-        // Enhanced verification with cryptographic validation
-        // This provides realistic security until full Expander integration
-
-        use std::collections::HashMap;
-
-        // Check that claimed output matches provided output first
-        for i in 0..output.len() {
-            if output.get(i) != proof.claimed_output.get(i) {
-                return Ok(false); // Invalid proof - output mismatch
-            }
-        }
-
-        // Deserialize proof components
-        let proof_components: HashMap<String, Vec<u8>> = bincode::deserialize(&proof.proof_data)
-            .context("Failed to deserialize proof components")?;
-
-        // Verify circuit hash integrity
-        let expected_circuit_hash = self.circuit.generate_circuit_hash()?;
-        let proof_circuit_hash = proof_components.get("circuit_hash")
-            .ok_or_else(|| anyhow::anyhow!("Missing circuit hash in proof"))?;
-
-        if expected_circuit_hash != *proof_circuit_hash {
-            return Ok(false); // Circuit integrity check failed
-        }
-
-        // Verify commitment root exists and has correct size
-        let commitment_root = proof_components.get("commitment_root")
-            .ok_or_else(|| anyhow::anyhow!("Missing commitment root in proof"))?;
-
-        if commitment_root.len() != 32 { // BN254 field element size
-            return Ok(false); // Invalid commitment root
-        }
-
-        // Verify sumcheck proof structure
-        let sumcheck_proof = proof_components.get("sumcheck_proof")
-            .ok_or_else(|| anyhow::anyhow!("Missing sumcheck proof in proof"))?;
-
-        // Use logarithmic rounds calculation (same as prover)
-        let num_rounds = ((self.circuit.m + self.circuit.k) as f64).log2().ceil() as usize + 3;
-        let expected_sumcheck_size = num_rounds * 4 * 32; // rounds * coeffs * field_size
-        if sumcheck_proof.len() != expected_sumcheck_size {
-            return Ok(false); // Invalid sumcheck structure
-        }
-
-        // Verify final evaluation
-        let final_evaluation = proof_components.get("final_evaluation")
-            .ok_or_else(|| anyhow::anyhow!("Missing final evaluation in proof"))?;
-
-        if final_evaluation.len() != 32 { // BN254 field element size
-            return Ok(false); // Invalid final evaluation
-        }
-
-        // Verify security metadata
-        let security_level = proof_components.get("security_level")
-            .ok_or_else(|| anyhow::anyhow!("Missing security level in proof"))?;
-
-        if security_level != &[128u8] {
-            return Ok(false); // Insufficient security level
-        }
-
-        // All cryptographic checks passed
-        Ok(true)
-    }
-
-    /// Verify proof using Expander CLI (fallback)
-    fn verify_via_cli(&self, proof: &MatrixProof, input: &Vector, output: &Vector) -> Result<bool> {
         use std::process::Command;
 
         // Generate temporary files for verification
@@ -182,22 +105,31 @@ impl ExpanderMatrixVerifier {
         let mut cmd = Command::new("expander-exec");
         cmd.arg("verify")
             .arg("-c").arg(&circuit_path)
-            .arg("-w").arg(&public_path)  // Public inputs act as "witness" for verification
+            .arg("-w").arg(&public_path)  // Public inputs for verification
             .arg("-i").arg(&proof_path)
             .arg("-f").arg("fr")  // BN254 field
-            .arg("-p").arg("Raw") // Raw polynomial commitment
-            .env("RUSTFLAGS", "-C target-cpu=native");
+            .arg("-p").arg("Raw"); // Raw polynomial commitment
+
+        eprintln!("🔍 Running expander-exec verify...");
+        eprintln!("   Circuit: {:?}", circuit_path);
+        eprintln!("   Public:  {:?}", public_path);
+        eprintln!("   Proof:   {:?}", proof_path);
 
         // Execute command
         let output = cmd.output()
-            .context("Failed to execute expander-exec verify")?;
+            .context("Failed to execute expander-exec. Make sure Expander dependencies are enabled in Cargo.toml")?;
 
         // Check verification result
         let success = output.status.success();
 
-        if !success {
+        if success {
+            eprintln!("✅ Proof verified successfully");
+        } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            println!("Verification failed: {}", stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            eprintln!("❌ Verification failed!");
+            eprintln!("   stdout: {}", stdout);
+            eprintln!("   stderr: {}", stderr);
         }
 
         Ok(success)
