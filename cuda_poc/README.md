@@ -1,141 +1,133 @@
-# CUDA POC - zkCUDA Matrix Multiplication
+# zkCUDA Proof of Concept
 
-GPU-accelerated zero-knowledge proofs for matrix multiplication using Polyhedra's zkCUDA framework.
+This package demonstrates matrix multiplication proofs using Polyhedra's zkCUDA framework.
 
-## Overview
+## ⚠️ Important: CPU vs GPU Execution
 
-This implementation uses the **ExpanderCompilerCollection** zkCUDA programming model to create GPU-accelerated GKR proofs. It provides:
+**Current Status**: The code runs on **CPU only** despite using zkCUDA syntax.
 
-- ✅ **GPU Acceleration**: Automatic CUDA kernel generation for proof computation
-- ✅ **Zero-Knowledge**: Matrix multiplication proofs without revealing the matrices
-- ✅ **High Performance**: Parallel execution on GPU using zkCUDA framework
-- ✅ **Clean API**: Simple Rust interface for proving and verification
+### What is zkCUDA?
 
-## zkCUDA Architecture
+zkCUDA is a **programming model** (like CUDA syntax) that compiles to zero-knowledge circuits. It does NOT automatically use GPU acceleration.
+
+- **ExpanderCompilerCollection's zkCUDA** - CUDA-like API that compiles to Expander circuit IR
+- **Execution backend** - Uses Expander's CPU-based GKR prover by default
+- **No GPU integration** - zkCUDA circuits currently execute on CPU
+
+### What About GPU Acceleration?
+
+Expander **does** have GPU support, but it's separate:
+
+1. **Expander CUDA sumcheck** - Standalone C++/CUDA implementation
+2. **Located at**: `~/Expander/sumcheck/cuda/`
+3. **Built successfully** on the remote CUDA machine (943KB binary)
+4. **Performance**: ~0.39s for 2^20 elements on GPU
+5. **Not integrated** with ExpanderCompilerCollection's zkCUDA framework
+
+### Architecture Diagram
 
 ```
-┌─────────────────────────┐
-│   Rust zkCUDA Kernels   │  ← #[kernel] macros
-│  (mul_line, sum_8)      │
-└──────────┬──────────────┘
-           │ compile_*()
-           ↓
-┌─────────────────────────┐
-│   GKR Circuit Graph     │  ← Automatic circuit generation
-└──────────┬──────────────┘
-           │
-           ↓
-┌─────────────────────────┐
-│   GPU Execution         │  ← zkSMs (zk Streaming Multiprocessors)
-│   (CUDA Backend)        │
-└──────────┬──────────────┘
-           │
-           ↓
-┌─────────────────────────┐
-│   Zero-Knowledge Proof  │  ← Compact proof output
-└─────────────────────────┘
+┌─────────────────────────────────────┐
+│   Our cuda_poc Rust Code            │
+│   (uses zkCUDA #[kernel] macros)    │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────┐
+│  ExpanderCompilerCollection          │
+│  (zkCUDA framework)                  │
+│  - Compiles kernels to circuits      │
+│  - CUDA-like syntax only             │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────┐
+│  Expander GKR Prover (CPU)           │
+│  - Executes circuit on CPU           │
+│  - No GPU backend in Rust API        │
+└──────────────────────────────────────┘
+
+Separate, unintegrated:
+┌──────────────────────────────────────┐
+│  Expander CUDA Sumcheck (GPU)        │
+│  - Standalone C++/CUDA binary        │
+│  - ~/Expander/sumcheck/cuda/         │
+│  - Works on GPU, but not accessible  │
+│    from zkCUDA framework             │
+└──────────────────────────────────────┘
 ```
-
-## Usage
-
-### Basic Example
-
-```rust
-use cuda_poc::*;
-
-// Create proof system
-let system = MatrixProofSystem::new()?;
-
-// Create matrices (64×32 and 32×64)
-let mat_a = create_matrix_64x32();
-let mat_b = create_matrix_32x64();
-
-// Generate proof on GPU
-let (result, proof) = system.prove(&mat_a, &mat_b)?;
-
-// Verify proof
-let verified = system.verify(&mat_a, &mat_b, result, &proof)?;
-assert!(verified);
-```
-
-### Run Demo
-
-```bash
-# Build and run
-cargo run -p cuda_poc --example demo --release
-
-# Expected output:
-# 🚀 zkCUDA Matrix Multiplication Proof Demo
-# ✅ Proof generated in ~XXms
-# ✅ Proof verified successfully in ~XXms
-```
-
-## Implementation Details
-
-### Kernels
-
-1. **`mul_line`**: Matrix multiplication kernel
-   - Input: Row vector `a[32]`, Matrix `b[32×64]`
-   - Output: Result vector `c[64]`
-   - Operation: `c[j] = Σ(a[i] * b[i][j])`
-
-2. **`sum_8_elements`**: Reduction kernel
-   - Input: Array `a[8]`
-   - Output: Sum of all elements
-   - Used for parallel reduction of results
-
-### Proof Flow
-
-1. **Matrix Multiplication**: 64×32 × 32×64 → 64×64 result matrix (4096 elements)
-2. **Parallel Reduction**: Multiple reduction stages using `sum_8_elements`
-   - 4096 → 512 → 64 → 8 → 1
-3. **Proof Generation**: Convert computation graph to ZK proof
-4. **Verification**: Verify proof using public computation graph
-
-## Dependencies
-
-- **ExpanderCompilerCollection** (zkcuda branch): zkCUDA compiler and runtime
-- M31 field arithmetic for circuit operations
 
 ## Performance
 
-| Matrix Size | Proving Time | Verification | Proof Size |
-|-------------|--------------|--------------|------------|
-| 64×32×32×64 | ~XXms (GPU)  | ~XXms        | ~XX KB     |
+### Current Performance (CPU)
+- **Matrix size**: 64×32 × 32×64 (fixed)
+- **Proving time**: ~115ms per iteration
+- **Throughput**: ~600K ops/sec
+- **Verification**: ~108ms
 
-*Benchmarks TBD on actual CUDA hardware*
-
-## Comparison with Legacy
-
-| Feature | Legacy (CPU) | zkCUDA (GPU) |
-|---------|--------------|--------------|
-| Backend | Custom GKR   | Expander     |
-| Acceleration | AVX/SIMD | CUDA         |
-| Proving | Sequential   | Parallel     |
-| Field | BN254        | M31          |
-
-## Building
-
-### Prerequisites
-
-- Rust nightly (required by ExpanderCompilerCollection)
-- CUDA toolkit (for GPU acceleration)
-
-### Build Commands
+### Running Examples
 
 ```bash
-# Build (will auto-detect CUDA)
-cargo build -p cuda_poc --release
-
-# Run tests
-cargo test -p cuda_poc
-
-# Run example
+# Basic demo
 cargo run -p cuda_poc --example demo --release
+
+# Stress test (100 iterations)
+cargo run -p cuda_poc --example stress_test --release 100
 ```
 
-## References
+## GPU Acceleration Status
 
-- [Polyhedra zkCUDA Docs](https://docs.polyhedra.network/expander/cuda/)
-- [ExpanderCompilerCollection](https://github.com/PolyhedraZK/ExpanderCompilerCollection)
-- [Expander GKR](https://github.com/PolyhedraZK/Expander)
+### ✅ What Works
+- zkCUDA syntax compiles successfully
+- Matrix multiplication proofs work correctly
+- CUDA-like programming model with `#[kernel]` macros
+- Expander's standalone CUDA sumcheck binary works on GPU
+
+### ❌ What Doesn't Work
+- zkCUDA framework does NOT use GPU
+- No Rust API integration with CUDA backend
+- No runtime flag to enable GPU mode
+- Matrix dimensions are compile-time hardcoded (64×32 × 32×64)
+
+### 🔧 GPU Build Details (for reference)
+
+The standalone CUDA sumcheck library was successfully built:
+
+```bash
+# On remote machine
+cd ~/Expander/sumcheck/cuda
+nvcc -O3 -arch=sm_86 -std=c++17 -Iinclude -Iicicle \
+     -DuseM31ext3 -o sumcheck.bin src/sumcheck_cuda.cu
+
+# Test GPU mode
+./sumcheck.bin -m gpu -p 20
+# Result: 0.392s for 2^20 elements on RTX 4090
+```
+
+**Note**: Used sm_86 (Ampere) instead of sm_89 (Ada) due to CUDA 11.5 limitations. RTX 4090 runs it via forward compatibility.
+
+## Future GPU Integration
+
+To actually use GPU with our zkCUDA code would require:
+
+1. **Create FFI bindings** to Expander's CUDA sumcheck library
+2. **Modify ExpanderCompilerCollection** to support GPU backend
+3. **Runtime configuration** to switch between CPU/GPU modes
+
+This is non-trivial and would require significant development effort.
+
+## Comparison with legacy_matrix_poc
+
+| Feature | cuda_poc (zkCUDA) | legacy_matrix_poc |
+|---------|-------------------|-------------------|
+| Execution | CPU (despite name) | CPU |
+| Throughput | 600K ops/sec | 13K ops/sec |
+| Matrix Size | Fixed (64×32 × 32×64) | Variable |
+| Programming Model | CUDA-like | Standard Rust |
+| GPU Support | No | No |
+
+## Conclusion
+
+**zkCUDA** is a clean, CUDA-inspired programming model for zero-knowledge circuits, but it does **not** provide GPU acceleration out of the box. The name refers to the programming style, not the execution backend.
+
+For actual GPU acceleration, you would need to integrate Expander's separate CUDA sumcheck implementation, which is currently a standalone system.
