@@ -2,6 +2,12 @@
 
 Zero-knowledge proofs for `y = W·x` where W is private. Supports SIMD and CUDA acceleration.
 
+## Cheatsheet
+
+```bash
+nvidia-smi dmon
+```
+
 ## Quick Start
 
 ```bash
