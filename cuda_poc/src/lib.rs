@@ -8,7 +8,7 @@ use expander_compiler::zkcuda::{context::*, kernel::*};
 
 // Re-export M31 and Field trait for public API
 pub use expander_compiler::frontend::M31;
-pub use arith::field::Field;
+pub use expander_compiler::field::FieldArith as Field;
 
 /// Matrix multiplication kernel for zkCUDA
 ///
